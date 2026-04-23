@@ -4,6 +4,7 @@ type: story
 status: To Do
 priority: High
 assignee: "@ai-dev"
+epic: "[[EPIC-001]]"
 created: 2026-04-23
 ---
 # STORY-001: Issue Lifecycle Automation (The Status Shifter)

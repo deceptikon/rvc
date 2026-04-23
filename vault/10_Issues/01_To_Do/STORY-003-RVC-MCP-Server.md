@@ -4,6 +4,7 @@ type: story
 status: To Do
 priority: Medium
 assignee: "@ai-dev"
+epic: "[[EPIC-001]]"
 created: 2026-04-23
 ---
 # STORY-003: Real RVC MCP Server (Native Agent Discovery)
