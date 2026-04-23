@@ -1,0 +1,8 @@
+[project]
+name = "rvc"
+version = "0.1.0"
+description = "RVC (Reglament of Vault Context) — local-first issue tracking protocol"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.6.0",
+]
