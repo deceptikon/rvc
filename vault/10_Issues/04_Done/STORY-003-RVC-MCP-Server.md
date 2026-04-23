@@ -1,7 +1,7 @@
 ---
 id: STORY-003
 type: story
-status: To Do
+status: Done
 priority: Critical
 assignee: "@ai-dev"
 epic: "[[EPIC-001]]"
