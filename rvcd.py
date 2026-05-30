@@ -162,6 +162,60 @@ def rvc_issue_list(project_path: str, status: str = "") -> dict:
     return _ok(stdout)
 
 
+@mcp.tool()
+def rvc_create_issue(
+    project_path: str,
+    title: str,
+    prefix: str = "STORY",
+    issue_type: str = "story",
+    priority: str = "Medium",
+    body: str = "",
+    directory: str = "01_To_Do",
+    epic: str = "",
+) -> dict:
+    """Create a new issue file with proper YAML frontmatter and sequential ID.
+
+    Args:
+        project_path: Absolute path to the project / vault root.
+        title: Short descriptive title for the issue.
+        prefix: ID prefix (default: STORY). E.g., STORY-30, BUG-05.
+        issue_type: One of story, bug, task, epic (default: story).
+        priority: One of Low, Medium, High, Critical (default: Medium).
+        body: Initial issue body in Markdown (use \\n for newlines).
+        directory: Target subfolder under 10_Issues/ (default: 01_To_Do).
+        epic: Optional parent epic name (e.g. EPIC-05-PRD-Phase-2).
+    """
+    cmd = [
+        "create", title,
+        "--prefix", prefix,
+        "--type", issue_type,
+        "--priority", priority,
+        "--dir", directory,
+    ]
+    if body:
+        cmd += ["--body", body]
+    if epic:
+        cmd += ["--epic", epic]
+    stdout, stderr, code = _rvc(cmd, project_path)
+    if code != 0:
+        return _err(f"rvc create '{title}' failed (exit {code}): {stderr}", code)
+    return _ok(stdout)
+
+
+@mcp.tool()
+def rvc_search_vault(project_path: str, query: str) -> dict:
+    """Search vault .md files for a pattern (case-insensitive grep).
+
+    Args:
+        project_path: Absolute path to the project / vault root.
+        query: Search query string (case-insensitive substring match).
+    """
+    stdout, stderr, code = _rvc(["search", query], project_path)
+    if code != 0:
+        return _err(f"rvc search '{query}' failed (exit {code}): {stderr}", code)
+    return _ok(stdout)
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
