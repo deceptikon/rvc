@@ -19,9 +19,10 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 # ---------------------------------------------------------------------------
-# Resolve the location of the companion rvc-cli.py
+# Resolve companion script paths
 # ---------------------------------------------------------------------------
 RVC_CLI = str(Path(__file__).resolve().parent / "rvc-cli.py")
+RVC_RESTRUCTURE = str(Path(__file__).resolve().parent / "vault-restructure.py")
 
 if not Path(RVC_CLI).exists():
     raise RuntimeError(f"rvc-cli.py not found at {RVC_CLI}")
@@ -214,6 +215,45 @@ def rvc_search_vault(project_path: str, query: str) -> dict:
     if code != 0:
         return _err(f"rvc search '{query}' failed (exit {code}): {stderr}", code)
     return _ok(stdout)
+
+
+@mcp.tool()
+def rvc_rescan_vault(project_path: str, dry_run: bool = False, skip_map: bool = False) -> dict:
+    """Rescan and restructure the vault: normalize frontmatter, auto-link STORY/EPIC
+    cross-references, infer domain tags, and regenerate MAP.md.
+
+    Args:
+        project_path: Absolute path to the project / vault root.
+        dry_run: If True, report changes without writing any files.
+        skip_map: If True, skip MAP.md regeneration.
+    """
+    try:
+        cmd = ["python3", RVC_RESTRUCTURE, project_path]
+        if dry_run:
+            cmd.append("--dry-run")
+        if skip_map:
+            cmd.append("--skip-map")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        if result.returncode != 0:
+            return _err(f"rvc rescan failed (exit {result.returncode}): {stderr}", result.returncode)
+        # Parse the summary line from output
+        summary = {"output": stdout, "success": True}
+        for line in stdout.splitlines():
+            if "Wikilinks added:" in line:
+                summary["summary_line"] = line.strip()
+                break
+        return summary
+    except subprocess.TimeoutExpired:
+        return _err("rvc rescan timed out after 120s", -1)
+    except Exception as exc:
+        return _err(str(exc), -1)
 
 
 # ---------------------------------------------------------------------------

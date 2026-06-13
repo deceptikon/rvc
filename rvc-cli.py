@@ -117,7 +117,7 @@ def cmd_context(vault_path, item_id):
         spec_path = None
         for root, dirs, files in os.walk(vault_path):
             for file in files:
-                if file.replace(".md", "") == link_name or file == f"{link_name}.md":
+                if file.startswith(link_name + "-") or file == f"{link_name}.md":
                     spec_path = os.path.join(root, file)
                     break
             if spec_path: break
@@ -332,6 +332,10 @@ def main():
     search_p = subparsers.add_parser("search", help="Search vault files")
     search_p.add_argument("query", help="Search query (case-insensitive)")
 
+    rescan_p = subparsers.add_parser("rescan", help="Rescan vault: fix frontmatter, add wikilinks, regenerate MAP.md")
+    rescan_p.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
+    rescan_p.add_argument("--skip-map", action="store_true", help="Skip MAP.md regeneration")
+
     project_p = subparsers.add_parser("project")
     project_p.add_argument("action", choices=["init", "info"])
     project_p.add_argument("target_path", nargs="?")
@@ -396,6 +400,18 @@ def main():
         )
     elif args.command == "search":
         cmd_search(vault_root, args.query)
+    elif args.command == "rescan":
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        restructure_script = os.path.join(script_dir, "vault-restructure.py")
+        cmd = ["python3", restructure_script, vault_root]
+        if getattr(args, "dry_run", False):
+            cmd.append("--dry-run")
+        if getattr(args, "skip_map", False):
+            cmd.append("--skip-map")
+        rc, out, err = run_cmd(" ".join(cmd))
+        print(out)
+        if err:
+            print(f"[rescan] stderr: {err}", file=sys.stderr)
     elif args.command == "project" and args.action == "info":
         print(f"# Vault Info")
         print(f"  Path: {vault_root}")
