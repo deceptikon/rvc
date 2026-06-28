@@ -77,11 +77,43 @@ def sync_after(vault_path, file_paths, msg):
         if rc != 0:
             print(f"[RVC] Warning: Git push failed:\n{err}")
 
-def find_file_by_id(vault_path, item_id):
+def build_vault_index(vault_path):
+    """Build an in-memory index of all files in the vault for O(1) lookups."""
+    vault_index = {}
     for root, dirs, files in os.walk(vault_path):
+        # Skip hidden directories (except .obsidian for structure)
+        dirs[:] = [d for d in dirs if not d.startswith(".") or d == ".obsidian"]
         for file in files:
-            if file.startswith(item_id):
-                return os.path.join(root, file)
+            # Remove .md extension and any anchors (#...) for indexing
+            base_name = file.rsplit('.md', 1)[0]
+            # Also support files without extensions
+            if base_name not in vault_index:
+                vault_index[base_name] = os.path.join(root, file)
+    return vault_index
+
+def find_file_by_id(vault_path, item_id):
+    # Clean the item_id to remove any anchors
+    clean_id = item_id.split('#')[0]
+    
+    # Build or reuse the vault index
+    if not hasattr(find_file_by_id, '_vault_cache'):
+        find_file_by_id._vault_cache = {}
+    
+    cache_key = vault_path
+    if cache_key not in find_file_by_id._vault_cache:
+        find_file_by_id._vault_cache[cache_key] = build_vault_index(vault_path)
+    
+    vault_index = find_file_by_id._vault_cache[cache_key]
+    
+    # Exact match first
+    if clean_id in vault_index:
+        return vault_index[clean_id]
+    
+    # Prefix match (e.g., item_id="STORY-05" matches "STORY-05-some-title")
+    for filename in vault_index.keys():
+        if filename.startswith(clean_id + "-"):
+            return vault_index[filename]
+    
     return None
 
 def cmd_get(vault_path, item_id):
@@ -112,23 +144,32 @@ def cmd_context(vault_path, item_id):
     print(f"# RVC Context Assembler: {item_id}\n")
     print(f"Found {len(links)} references. Gathering documentation...\n")
 
+    # Build the vault index once for all link lookups
+    vault_index = build_vault_index(vault_path)
+    
     for link in links:
-        link_name = link.split('|')[0]
+        # Strip anchor and alias to get base filename
+        link_name = link.split('|')[0].split('#')[0]
         spec_path = None
-        for root, dirs, files in os.walk(vault_path):
-            for file in files:
-                if file.startswith(link_name + "-") or file == f"{link_name}.md":
-                    spec_path = os.path.join(root, file)
+        
+        # Exact match first
+        if link_name in vault_index:
+            spec_path = vault_index[link_name]
+        else:
+            # Prefix match
+            for filename in vault_index.keys():
+                if filename.startswith(link_name + "-"):
+                    spec_path = vault_index[filename]
                     break
-            if spec_path: break
 
         if spec_path:
-            print(f"--- REFERENCE: [[{link_name}]] ---")
+            print(f"--- REFERENCE: [[{link}]] ---")
+            print(f"File: {os.path.relpath(spec_path, vault_path)}\n")
             with open(spec_path, 'r') as f_spec:
                 print(f_spec.read())
             print(f"\n--- END OF REFERENCE ---\n")
         else:
-            print(f"--- REFERENCE [[{link_name}]] NOT FOUND IN VAULT ---\n")
+            print(f"--- REFERENCE [[{link}]] NOT FOUND IN VAULT ---\n")
 
 def cmd_issue_action(vault_path, issue_id, action):
     valid_actions = {
@@ -336,6 +377,9 @@ def main():
     rescan_p.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
     rescan_p.add_argument("--skip-map", action="store_true", help="Skip MAP.md regeneration")
 
+    init_p = subparsers.add_parser("init", help="Initialize a new vault (flat — no vault/ subdirectory)")
+    init_p.add_argument("target_path", nargs="?", default=".", help="Directory to initialize (default: current)")
+
     project_p = subparsers.add_parser("project")
     project_p.add_argument("action", choices=["init", "info"])
     project_p.add_argument("target_path", nargs="?")
@@ -343,6 +387,30 @@ def main():
                            help="Vault directory name (default: vault)")
 
     args = parser.parse_args()
+
+    if args.command == "init":
+        target = args.target_path or "."
+        vault_dir = os.path.abspath(target)
+        os.makedirs(os.path.join(vault_dir, "00_Project"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "10_Issues", "00_Backlog"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "10_Issues", "01_To_Do"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "10_Issues", "02_Active"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "10_Issues", "03_Review"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "10_Issues", "04_Done"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "20_Specs"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "90_Assets"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, "99_Archive"), exist_ok=True)
+        os.makedirs(os.path.join(vault_dir, ".obsidian"), exist_ok=True)
+
+        with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
+            f.write("# RVC vault root\n")
+
+        with open(os.path.join(vault_dir, "00_Project", "REGLAMENT.md"), "w") as f:
+            f.write("# ProjectReglament\n")
+        print(f"[RVC] Initialized vault structure at {vault_dir}")
+        print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
+        print(f"[RVC] Tip: open this directory directly in Obsidian (no vault/ subfolder)")
+        return
 
     if args.command == "project" and args.action == "init":
         target = args.target_path or "."
