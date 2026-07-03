@@ -2,11 +2,16 @@
 id: STORY-002
 type: story
 status: To Do
-priority: High
+priority: P1
 assignee: "@ai-dev"
 epic: "[[EPIC-001]]"
 created: 2026-04-23
+title: RVC-Scaffolder
+tags: [issue, workflow]
+domain: workflow_meta
+domain_tags: ["rvc", "protocol", "story"]
 ---
+
 # STORY-002: RVC Scaffolder (Zero-Friction Deployment)
 
 ## Description

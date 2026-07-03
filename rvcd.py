@@ -218,21 +218,18 @@ def rvc_search_vault(project_path: str, query: str) -> dict:
 
 
 @mcp.tool()
-def rvc_rescan_vault(project_path: str, dry_run: bool = False, skip_map: bool = False) -> dict:
+def rvc_rescan_vault(project_path: str, dry_run: bool = False) -> dict:
     """Rescan and restructure the vault: normalize frontmatter, auto-link STORY/EPIC
-    cross-references, infer domain tags, and regenerate MAP.md.
+    cross-references, infer domain tags.
 
     Args:
         project_path: Absolute path to the project / vault root.
         dry_run: If True, report changes without writing any files.
-        skip_map: If True, skip MAP.md regeneration.
     """
     try:
         cmd = ["python3", RVC_RESTRUCTURE, project_path]
         if dry_run:
             cmd.append("--dry-run")
-        if skip_map:
-            cmd.append("--skip-map")
         result = subprocess.run(
             cmd,
             capture_output=True,

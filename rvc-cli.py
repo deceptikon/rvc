@@ -373,9 +373,8 @@ def main():
     search_p = subparsers.add_parser("search", help="Search vault files")
     search_p.add_argument("query", help="Search query (case-insensitive)")
 
-    rescan_p = subparsers.add_parser("rescan", help="Rescan vault: fix frontmatter, add wikilinks, regenerate MAP.md")
+    rescan_p = subparsers.add_parser("rescan", help="Rescan vault: fix frontmatter, add wikilinks")
     rescan_p.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
-    rescan_p.add_argument("--skip-map", action="store_true", help="Skip MAP.md regeneration")
 
     init_p = subparsers.add_parser("init", help="Initialize a new vault (flat — no vault/ subdirectory)")
     init_p.add_argument("target_path", nargs="?", default=".", help="Directory to initialize (default: current)")
@@ -474,8 +473,7 @@ def main():
         cmd = ["python3", restructure_script, vault_root]
         if getattr(args, "dry_run", False):
             cmd.append("--dry-run")
-        if getattr(args, "skip_map", False):
-            cmd.append("--skip-map")
+
         rc, out, err = run_cmd(" ".join(cmd))
         print(out)
         if err:

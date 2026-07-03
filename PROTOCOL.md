@@ -1,3 +1,9 @@
+> **Active Epic:** [[EPIC-001-RVC-Protocol]]
+
+---
+domain: workflow_meta
+domain_tags: ["rvc", "protocol"]
+
 # RVC — Reglament of Vault Context
 
 Local-first, Obsidian-native issue tracking protocol for AI-assisted development.
@@ -281,3 +287,4 @@ summary = rescan_vault("/path/to/vault", dry_run=False, skip_map=False)
 ## License
 
 Internal tooling for ADLAI and related projects.
+

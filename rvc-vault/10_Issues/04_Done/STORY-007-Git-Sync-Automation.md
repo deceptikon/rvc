@@ -2,11 +2,16 @@
 id: STORY-007
 type: story
 status: Done
-priority: High
+priority: P1
 assignee: "@ai-dev"
 epic: "[[EPIC-001]]"
 created: 2026-04-23
+title: Git-Sync-Automation
+tags: [issue, workflow]
+domain: workflow_meta
+domain_tags: ["rvc", "protocol", "story"]
 ---
+
 # STORY-007: Bulletproof Git-Sync & State Locking
 
 ## Description

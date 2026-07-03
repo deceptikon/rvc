@@ -6,8 +6,7 @@ Goals:
   1. Ensure every .md file has valid, consistent frontmatter.
   2. Auto-wrap plain-text STORY-XX / EPIC-XX references in [[wikilinks]].
   3. Add missing domain tags based on content analysis.
-  4. Generate MAP.md — a navigable knowledge-graph index.
-  5. Be idempotent — safe to re-run.
+  4. Be idempotent — safe to re-run.
 
 Usage:
   python3 vault-restructure.py /path/to/vault [--dry-run]
@@ -22,8 +21,7 @@ import re
 import sys
 import json
 import hashlib
-from collections import defaultdict
-from datetime import date
+
 
 SKIP_DIRS = {".obsidian"}
 
@@ -435,184 +433,20 @@ def process_file(filepath, known_ids, vault_root, dry_run=False):
     }
 
 
-def generate_map(results, vault_root):
-    """Generate MAP.md — a navigable knowledge graph index."""
-    # Build lookup: id → {file, type, status, tags, wikilinks}
-    by_id = {}
-    by_type = defaultdict(list)
-    by_status = defaultdict(list)
-    by_tag = defaultdict(list)
-    all_wikilinks = defaultdict(set)  # source_id → {target_ids}
 
-    for r in results:
-        fm = r["new_fm"]
-        fid = fm.get("id")
-        ftype = fm.get("type", "")
-        status = fm.get("status", "unknown")
-        tags = fm.get("tags", [])
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.strip("[]").split(",") if t.strip()]
-
-        if fid:
-            by_id[fid] = r
-        by_type[ftype].append(r)
-        by_status[status].append(r)
-        for t in tags:
-            by_tag[t].append(r)
-
-    # Discover outbound wikilinks from the new_fm + body stored in results
-    # We re-read the new content from results (works for both dry-run and live)
-    for r in results:
-        fid = r["new_fm"].get("id")
-        if not fid:
-            continue
-        # Reconstruct the new content to scan for wikilinks
-        new_content = r.get("new_content", "")
-        if not new_content:
-            # Fallback: read from disk (live mode)
-            fp = os.path.join(vault_root, r["file"])
-            if os.path.exists(fp):
-                with open(fp) as f:
-                    new_content = f.read()
-        targets = set(ID_RE.findall(new_content))
-        targets.discard(fid)
-        if targets:
-            all_wikilinks[fid] = targets
-
-    lines = []
-    lines.append("---")
-    lines.append("type: meta")
-    lines.append("title: Vault Knowledge Map")
-    lines.append(f"updated: {date.today().isoformat()}")
-    lines.append("tags: [map, index, knowledge-graph]")
-    lines.append("---")
-    lines.append("")
-    lines.append("# 🗺️ ADLAI Vault Knowledge Map")
-    lines.append("")
-    lines.append(f"*Auto-generated — {date.today().isoformat()}. Safe to regenerate.*")
-    lines.append("")
-    lines.append("## Quick Index")
-    lines.append("")
-    lines.append("| Symbol | Meaning |")
-    lines.append("|---|---|")
-    lines.append("| `[[ID]]` | Wikilink to a story/epic |")
-    lines.append("| `#tag` | Domain filter tag |")
-    lines.append("| ✅ Done / 🔍 Review / ▶ Active / ⬜ To Do / 📋 Backlog | Status |")
-    lines.append("")
-    lines.append("---")
-    lines.append("")
-
-    # EPICs section
-    epics = sorted(by_type.get("epic", []), key=lambda r: r["new_fm"].get("id", ""))
-    if epics:
-        lines.append("## Epics")
-        lines.append("")
-        for r in epics:
-            fm = r["new_fm"]
-            eid = fm.get("id", "?")
-            title = fm.get("title", r["file"])
-            status = fm.get("status", "?")
-            tags = fm.get("tags", [])
-            tag_str = " ".join(f"`{t}`" for t in tags[:5]) if tags else ""
-            status_icon = {"Done": "✅", "Review": "🔍", "Active": "▶"}.get(status, "⬜")
-            lines.append(f"- {status_icon} [[{eid}]] — {title} {tag_str}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-
-    # Stories by status
-    status_order = ["Active", "Review", "To Do", "Backlog", "Done"]
-    status_icons = {"Active": "▶", "Review": "🔍", "To Do": "⬜", "Backlog": "📋", "Done": "✅"}
-    stories = by_type.get("story", [])
-    if stories:
-        for status in status_order:
-            bucket = [r for r in stories if r["new_fm"].get("status") == status]
-            if not bucket:
-                continue
-            icon = status_icons.get(status, "⬜")
-            lines.append(f"## {icon} {status} ({len(bucket)})")
-            lines.append("")
-            for r in sorted(bucket, key=lambda x: x["new_fm"].get("id", "")):
-                fm = r["new_fm"]
-                sid = fm.get("id", "?")
-                title = fm.get("title", r["file"])
-                tags = fm.get("tags", [])
-                tag_str = " ".join(f"`{t}`" for t in tags[:4]) if tags else ""
-                epic = fm.get("epic", "")
-                epic_ref = f" ← {epic}" if epic else ""
-                lines.append(f"- [[{sid}]] — {title} {tag_str}{epic_ref}")
-            lines.append("")
-        lines.append("---")
-        lines.append("")
-
-    # Specs
-    specs = by_type.get("spec", [])
-    if specs:
-        lines.append("## 📐 Specs")
-        lines.append("")
-        for r in sorted(specs, key=lambda x: x["file"]):
-            fm = r["new_fm"]
-            title = fm.get("title", r["file"])
-            tags = fm.get("tags", [])
-            tag_str = " ".join(f"`{t}`" for t in tags[:4]) if tags else ""
-            lines.append(f"- {r['file']} — {title} {tag_str}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-
-    # Reviews
-    reviews = by_type.get("review", [])
-    if reviews:
-        lines.append("## 📝 Reviews")
-        lines.append("")
-        for r in sorted(reviews, key=lambda x: x["file"]):
-            fm = r["new_fm"]
-            title = fm.get("title", r["file"])
-            lines.append(f"- {r['file']} — {title}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-
-    # Domain Tags Index
-    if by_tag:
-        lines.append("## 🏷️ By Domain Tag")
-        lines.append("")
-        for tag in sorted(by_tag.keys()):
-            refs = by_tag[tag]
-            ids = [r["new_fm"].get("id", r["file"]) for r in refs if r["new_fm"].get("id")]
-            link_ids = [f"[[{i}]]" for i in sorted(ids)]
-            lines.append(f"**#{tag}** ({len(refs)}): {', '.join(link_ids) if link_ids else ', '.join(r['file'] for r in refs)}")
-        lines.append("")
-        lines.append("---")
-        lines.append("")
-
-    # Relationship graph (wikilinks)
-    if all_wikilinks:
-        lines.append("## 🔗 Cross-References")
-        lines.append("")
-        lines.append("```")
-        for src_id in sorted(all_wikilinks.keys()):
-            targets = sorted(all_wikilinks[src_id])
-            if targets:
-                lines.append(f"[[{src_id}]] → {', '.join(f'[[{t}]]' for t in targets)}")
-        lines.append("```")
-        lines.append("")
-
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def rescan_vault(vault_root, dry_run=False, skip_map=False):
+def rescan_vault(vault_root, dry_run=False):
     """
     Rescan and restructure the vault. Returns a summary dict.
 
     Args:
         vault_root: Absolute path to the vault directory.
         dry_run: If True, don't write any files.
-        skip_map: If True, don't regenerate MAP.md.
 
     Returns:
         dict with keys: files_processed, files_changed, wikilinks_added, results
@@ -640,20 +474,10 @@ def rescan_vault(vault_root, dry_run=False, skip_map=False):
                     if m:
                         total_links += int(m.group(1))
 
-    # Generate MAP.md
-    map_path = os.path.join(vault_root, "00_Project", "MAP.md")
-    if not skip_map:
-        map_content = generate_map(results, vault_root)
-        if not dry_run:
-            os.makedirs(os.path.dirname(map_path), exist_ok=True)
-            with open(map_path, "w") as f:
-                f.write(map_content)
-
     return {
         "files_processed": len(results),
         "files_changed": changed_files,
         "wikilinks_added": total_links,
-        "map_path": map_path if not skip_map else None,
         "results": results,
     }
 
@@ -664,19 +488,13 @@ def rescan_vault(vault_root, dry_run=False, skip_map=False):
 
 def main():
     vault_root = sys.argv[1] if len(sys.argv) > 1 else "."
-    dry_run = "--dry-run" in sys.argv
-    skip_map = "--skip-map" in sys.argv
 
     print(f"Vault: {vault_root}")
-    print(f"Mode:  {'DRY RUN (no writes)' if dry_run else 'LIVE'}")
     print()
 
-    summary = rescan_vault(vault_root, dry_run=dry_run, skip_map=skip_map)
+    summary = rescan_vault(vault_root)
 
     print(f"Known IDs: {sorted(find_known_ids(vault_root))}")
-    print()
-    if summary["map_path"]:
-        print(f"MAP.md: {summary['map_path']}")
 
     # Summary
     print(f"\n{'='*60}")

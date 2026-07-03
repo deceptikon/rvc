@@ -1,3 +1,7 @@
+---
+domain: workflow_meta
+domain_tags: ["rvc", "protocol"]
+
 # Reglament of Vault Context (RVC) v1.0
 
 ## 1. Philosophy
@@ -67,3 +71,4 @@ To prepare for Graph DB ingestion:
   - `Obsidian Git`: For version control.
   - `Tasks`: For managing checkboxes across files.
 - **External CLI:** `rvc-sync` (Draft tool) for bulk operations.
+

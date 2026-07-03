@@ -1,3 +1,7 @@
+---
+domain: workflow_meta
+domain_tags: ["rvc", "protocol"]
+
 <%*
 const title = await tp.system.prompt("Issue Title");
 const type = await tp.system.suggester(["story", "bug", "task", "epic"], ["story", "bug", "task", "epic"]);
@@ -15,7 +19,7 @@ status: To Do
 priority: ${priority}
 assignee: "@human"
 created: ${date}
-tags: []
+tags: [workflow]
 ---
 # ${title}
 
@@ -28,3 +32,4 @@ Enter description here...
 
 tR += content;
 %>
+

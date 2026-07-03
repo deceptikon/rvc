@@ -2,11 +2,16 @@
 id: STORY-004
 type: story
 status: To Do
-priority: Medium
+priority: P2
 assignee: "@human"
 epic: "[[EPIC-001]]"
 created: 2026-04-23
+title: Obsidian-Templates
+tags: [issue, workflow]
+domain: workflow_meta
+domain_tags: ["rvc", "protocol", "story"]
 ---
+
 # STORY-004: Obsidian Templater Suite (Standardized Entry)
 
 ## Description
