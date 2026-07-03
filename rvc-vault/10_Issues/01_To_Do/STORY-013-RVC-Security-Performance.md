@@ -10,6 +10,8 @@ tags: [issue, rvc, workflow]
 title: RVC-Security-Performance
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-013
 ---
 
 # STORY-013: RVC CLI Security & Performance Hardening

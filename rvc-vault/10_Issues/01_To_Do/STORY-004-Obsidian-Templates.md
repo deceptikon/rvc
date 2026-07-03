@@ -10,6 +10,8 @@ title: Obsidian-Templates
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-004
 ---
 
 # STORY-004: Obsidian Templater Suite (Standardized Entry)

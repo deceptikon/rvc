@@ -10,6 +10,8 @@ title: Lifecycle-Automation
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-001
 ---
 
 # STORY-001: RVC CLI Tree & Minimal State Machine

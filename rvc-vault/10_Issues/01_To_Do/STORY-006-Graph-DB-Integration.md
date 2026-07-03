@@ -10,6 +10,8 @@ title: Graph-DB-Integration
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-006
 ---
 
 # STORY-006: Graph DB Integration (Nodes & Edges)

@@ -9,6 +9,8 @@ title: RVC-Protocol
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "epic"]
+aliases:
+  - EPIC-001
 ---
 > **Domain:** [[VAULT_DOMAINS]] #rvc
 

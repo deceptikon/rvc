@@ -10,6 +10,8 @@ tags: [conductor, issue, workflow]
 title: Unit-Test-Foundation
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-010
 ---
 
 # STORY-010: Unit Test Foundation

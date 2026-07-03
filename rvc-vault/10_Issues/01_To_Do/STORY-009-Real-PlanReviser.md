@@ -10,6 +10,8 @@ tags: [conductor, issue, workflow]
 title: Real-PlanReviser
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-009
 ---
 
 # STORY-009: Real PlanReviser with QA Log Diagnosis

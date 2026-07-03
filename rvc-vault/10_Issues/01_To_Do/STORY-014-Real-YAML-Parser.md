@@ -10,6 +10,8 @@ tags: [issue, rvc, workflow]
 title: Real-YAML-Parser
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-014
 ---
 
 # STORY-014: Replace Ad-Hoc YAML Parser with Real YAML Library

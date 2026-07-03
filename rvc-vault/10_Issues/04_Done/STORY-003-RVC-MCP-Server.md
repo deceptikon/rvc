@@ -10,6 +10,8 @@ title: RVC-MCP-Server
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-003
 ---
 
 # STORY-003: Global RVC MCP Server & Unified Graph Storage

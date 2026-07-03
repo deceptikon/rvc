@@ -10,6 +10,8 @@ tags: [conductor, issue, workflow]
 title: Conductor-v0.2-Hardening
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "epic"]
+aliases:
+  - EPIC-002
 ---
 
 # EPIC-002: Conductor v0.2 — Production Hardening & Intelligence

@@ -288,3 +288,8 @@ summary = rescan_vault("/path/to/vault", dry_run=False, skip_map=False)
 
 Internal tooling for ADLAI and related projects.
 
+
+
+## Sub-Documents & Context
+- [[RVC/OBSIDIAN_TEMPLATER]]
+- [[RVC/rvc-vault/00_Project/PLAN-RVC-REVIVAL]]

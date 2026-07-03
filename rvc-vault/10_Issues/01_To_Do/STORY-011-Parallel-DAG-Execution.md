@@ -10,6 +10,8 @@ tags: [conductor, issue, workflow]
 title: Parallel-DAG-Execution
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-011
 ---
 
 # STORY-011: Parallel DAG Execution in Act Node

@@ -10,6 +10,8 @@ tags: [conductor, issue, rvc, workflow]
 title: RVC-Context-Caching
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-012
 ---
 
 # STORY-012: RVC Context Caching & Token Optimization

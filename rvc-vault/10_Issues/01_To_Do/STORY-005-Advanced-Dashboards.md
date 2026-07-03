@@ -10,6 +10,8 @@ title: Advanced-Dashboards
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-005
 ---
 
 # STORY-005: Advanced Visual Dashboards

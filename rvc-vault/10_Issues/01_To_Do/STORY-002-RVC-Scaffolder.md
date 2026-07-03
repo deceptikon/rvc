@@ -10,6 +10,8 @@ title: RVC-Scaffolder
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-002
 ---
 
 # STORY-002: RVC Scaffolder (Zero-Friction Deployment)

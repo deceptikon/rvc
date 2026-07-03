@@ -10,6 +10,8 @@ tags: [conductor, issue, workflow]
 title: Eliminate-shell-True
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-008
 ---
 
 # STORY-008: Security Hardening — Eliminate `shell=True`

@@ -10,6 +10,8 @@ title: Git-Sync-Automation
 tags: [issue, workflow]
 domain: workflow_meta
 domain_tags: ["rvc", "protocol", "story"]
+aliases:
+  - STORY-007
 ---
 
 # STORY-007: Bulletproof Git-Sync & State Locking
