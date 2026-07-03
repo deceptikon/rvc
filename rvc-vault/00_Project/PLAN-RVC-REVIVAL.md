@@ -147,13 +147,6 @@ Detects old vault structure (flat with `00_Project/`, `10_Issues/`, etc.), moves
 
 ---
 
-## NOT DECIDED: Domain-Based Structuring
+## DECIDED: Domain-Based Structuring
 
-This is the strategic question. Without it, context retrieval is just "grab all links" — the MAP.md problem repeats. The algorithm needs to answer:
-
-- How is a domain defined? (name + scope of files/topics)
-- How does a story declare its domain?
-- How does context retrieval scope itself to the right domain?
-- How do domains cross-reference without collapsing into one blob?
-
-**Separate session needed.** See `HANDOVER.md`.
+The domain model has been decided. See `[[DECISION-Domain-Structuring]]` for the full specification covering domain declaration, story-to-domain binding, context scoping, cross-domain references, and granularity policy.
