@@ -36,3 +36,6 @@ state = {"issue_id": "STORY-01", "rvc_mode": "full"}
 # After plan_node + act_node in the same cycle:
 assert mock_rvc_context.call_count == 1
 ```
+
+## Related
+- `[[rvc-vault/00_Project/DECISION-Domain-Structuring|DECISION-Domain-Structuring]]` — defines the domain-scoping rules that the `--rvc-summary` retrieval mode must respect.
