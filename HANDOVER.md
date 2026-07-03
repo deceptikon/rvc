@@ -40,13 +40,12 @@ But this is prose, not structure. The system can't parse it.
 
 ## Relevant Files to Read Before the Session
 
-- `~/Q/vault-protocol/REGLAMENT.md` — the original RVC protocol spec
-- `~/Q/GATHERING/flow-vault/00_Project/REGLAMENT.md` — flow-vault constitution (has domain separation rules)
-- `~/Q/GATHERING/EPIC-GATHERING-MVP.md` — S-02 (Rebuild RVC context engine) and S-05 (Story quality contract)
-- `~/Q/GATHERING/flow-vault/10_Issues/01_To_Do/EPIC-1-RVC-REVIVAL-WITH-FLOW.md` — the full EPIC
-- `~/Q/GATHERING/flow-vault/20_Specs/` — all L0-L5 layer specs
-- `~/Q/vault-protocol/vault-restructure.py` — current `generate_map()` and `infer_tags_from_content()` (the MAP.md monster we're killing)
-- `~/Q/vault-protocol/rvc-cli.py` — current `cmd_context()` (the naive link-following we're replacing)
+- `~/X/TEAMFLOW/RVC/REGLAMENT.md` — the original RVC protocol spec
+- `~/X/TEAMFLOW/RVC/00_Project/REGLAMENT.md` — flow-vault constitution (has domain separation rules)
+- `~/X/TEAMFLOW/RVC/10_Issues/01_To_Do/EPIC-1-RVC-REVIVAL-WITH-FLOW.md` — the full EPIC
+- `~/X/TEAMFLOW/RVC/20_Specs/` — all L0-L5 layer specs
+- `~/X/TEAMFLOW/RVC/vault-restructure.py` — current `generate_map()` and `infer_tags_from_content()` (the MAP.md monster we're killing)
+- `~/X/TEAMFLOW/RVC/rvc-cli.py` — current `cmd_context()` (the naive link-following we're replacing)
 
 ## What to Prepare Before the Session
 
@@ -59,3 +58,21 @@ But this is prose, not structure. The system can't parse it.
 ## Starting Prompt for the Session
 
 > "We're designing the domain model for the RVC vault. The vault is `.RVC/` with 4 flat buckets. Issues are `.md` files with YAML frontmatter. We need to define how stories declare their domain, how context retrieval scopes to that domain, and how domains cross-reference without collapsing. Ready to discuss."
+
+---
+
+## Outcome
+
+**Status:** DECIDED — 2026-07-03
+
+1. **Domain definition** — A domain is declared by `domain_id` in `VAULT_DOMAINS.md`. The `domain_id` is the value used in frontmatter (e.g., `workflow_meta`, `infrastructure`). No new file format is required.
+
+2. **Story-to-domain binding** — Stories use the existing `domain:` frontmatter key. The value must be a `domain_id` registered in `VAULT_DOMAINS.md`.
+
+3. **Context scoping** — `rvc context STORY-XX` performs depth-limited traversal (default depth = 2). It includes linked files only if they are in the same top-level family (`adlai` or `workflow`), are hub files, or are cross-vault links.
+
+4. **Cross-domain references** — Use `[[vault-name:ID]]` syntax. The target is included as a single leaf; its outbound links are NOT followed. This prevents domain collapse.
+
+5. **Domain granularity** — Exactly 2 levels: `top-level/subdomain`. The `domain:` frontmatter uses the leaf subdomain ID. No deeper nesting is allowed.
+
+For the full specification, see `[[rvc-vault/00_Project/DECISION-Domain-Structuring|DECISION-Domain-Structuring]]`.
