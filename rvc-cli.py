@@ -342,6 +342,21 @@ def _find_dirty_submodules(repo_root):
     return dirty
 
 
+def _ensure_on_branch(repo_path, label=""):
+    """If HEAD is detached in a submodule, move to the default branch."""
+    rc, out, _ = run_cmd("git symbolic-ref -q HEAD", cwd=repo_path)
+    if rc == 0:
+        return  # already on a branch
+    for branch in ["main", "master"]:
+        rc2, _, _ = run_cmd(f"git show-ref --verify refs/heads/{branch}", cwd=repo_path)
+        if rc2 == 0:
+            run_cmd(f"git checkout -B {branch} HEAD", cwd=repo_path)
+            print(f"[git-commit-all]   {label}Moved detached HEAD to branch '{branch}'")
+            return
+    run_cmd("git checkout -b main", cwd=repo_path)
+    print(f"[git-commit-all]   {label}Created branch 'main' at detached HEAD")
+
+
 def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=False):
     """Commit across all dirty submodules, then in parent repo. Safe incremental.
 
@@ -402,6 +417,7 @@ def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=F
         if rc2 != 0:
             print(f"[git-commit-all] FAILED: git commit in {rel}:\n{err2}")
             sys.exit(1)
+        _ensure_on_branch(sub_path, label=f"{rel}: ")
         if push:
             rc3, _, err3 = run_cmd("git push", cwd=sub_path)
             if rc3 != 0:
@@ -418,6 +434,7 @@ def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=F
     if rc2 != 0:
         print(f"[git-commit-all] Parent commit skipped — nothing to commit?")
         print(f"  stdout: {out2.strip()}\n  stderr: {err2.strip()}")
+    _ensure_on_branch(git_root, label="parent: ")
     if push:
         rc3, _, err3 = run_cmd("git push", cwd=git_root)
         if rc3 != 0:
