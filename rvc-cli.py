@@ -366,14 +366,23 @@ def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=F
     print(f"[git-commit-all] Dirty submodules ({len(dirty)}):")
     for d in dirty:
         rel = os.path.relpath(d, git_root)
-        rc, out, err = run_cmd("git diff --stat", cwd=d)
-        diff_out = out.strip()
+        rc_staged, out_staged, _ = run_cmd("git diff --cached --stat", cwd=d)
+        rc_unstaged, out_unstaged, _ = run_cmd("git diff --stat", cwd=d)
+        rc_untracked, out_untracked, _ = run_cmd("git ls-files --others --exclude-standard", cwd=d)
+        staged = out_staged.strip()
+        unstaged = out_unstaged.strip()
+        untracked = out_untracked.strip()
         print(f"  - {rel}:")
-        if diff_out:
-            for line in diff_out.split("\n"):
-                print(f"      {line}")
-        else:
-            print(f"      (unstaged changes — see `git status`)")
+        if staged:
+            for line in staged.split("\n"):
+                print(f"      staged: {line}")
+        if unstaged:
+            for line in unstaged.split("\n"):
+                print(f"      unstaged: {line}")
+        if untracked:
+            print(f"      untracked: {len(untracked.split(chr(10)))} file(s)")
+        if not staged and not unstaged and not untracked:
+            print(f"      (modified submodule pointer)")
         if dry_run:
             print(f"      → Would: git add -u && git commit -m '{message}'"
                   + (" && git push" if push else ""))
