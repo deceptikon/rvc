@@ -339,17 +339,19 @@ def _find_dirty_submodules(repo_root):
         rc, out, err = run_cmd("git status --porcelain", cwd=path)
         if rc == 0 and out.strip():
             dirty.append(path)
-    # Also check ADLAI (gitlink, not in .gitmodules)
-    adlai = os.path.join(repo_root, "ADLAI")
-    if os.path.isdir(os.path.join(adlai, ".git")):
-        rc, out, err = run_cmd("git status --porcelain", cwd=adlai)
-        if rc == 0 and out.strip():
-            dirty.append(adlai)
     return dirty
 
 
-def cmd_git_commit_all(vault_path, message):
-    """Commit and push in all dirty submodules, then in parent repo."""
+def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=False):
+    """Commit across all dirty submodules, then in parent repo. Safe incremental.
+
+    Exactly one of --dry-run, --no-push, or --push must be specified.
+    Uses `git add -u` (tracked files only) — never stages untracked files.
+    """
+    if not dry_run and not no_push and not push:
+        print("[git-commit-all] Error: Specify --dry-run, --no-push, or --push")
+        sys.exit(1)
+
     git_root = find_git_root(vault_path)
     if not git_root:
         print("[git-commit-all] Error: No git root found.")
@@ -357,40 +359,62 @@ def cmd_git_commit_all(vault_path, message):
 
     dirty = _find_dirty_submodules(git_root)
 
-    if dirty:
-        print(f"[git-commit-all] Dirty submodules ({len(dirty)}):")
-        for d in dirty:
-            print(f"  - {os.path.relpath(d, git_root)}")
+    if not dirty:
+        print("[git-commit-all] No dirty submodules found.")
+        return
 
-        for sub_path in dirty:
-            rel = os.path.relpath(sub_path, git_root)
-            print(f"\n[git-commit-all] Committing in {rel}...")
-            rc1, _, err1 = run_cmd("git add -A", cwd=sub_path)
-            if rc1 != 0:
-                print(f"[git-commit-all] FAILED: git add in {rel}:\n{err1}")
-                sys.exit(1)
-            rc2, _, err2 = run_cmd(f"git commit -m '{message}'", cwd=sub_path)
-            if rc2 != 0:
-                print(f"[git-commit-all] FAILED: git commit in {rel}:\n{err2}")
-                sys.exit(1)
+    print(f"[git-commit-all] Dirty submodules ({len(dirty)}):")
+    for d in dirty:
+        rel = os.path.relpath(d, git_root)
+        rc, out, err = run_cmd("git diff --stat", cwd=d)
+        diff_out = out.strip()
+        print(f"  - {rel}:")
+        if diff_out:
+            for line in diff_out.split("\n"):
+                print(f"      {line}")
+        else:
+            print(f"      (unstaged changes — see `git status`)")
+        if dry_run:
+            print(f"      → Would: git add -u && git commit -m '{message}'"
+                  + (" && git push" if push else ""))
+
+    if dry_run:
+        print("\n[git-commit-all] Dry-run complete. No changes made.")
+        return
+
+    for sub_path in dirty:
+        rel = os.path.relpath(sub_path, git_root)
+        print(f"\n[git-commit-all] Committing in {rel}...")
+        rc1, _, err1 = run_cmd("git add -u", cwd=sub_path)
+        if rc1 != 0:
+            print(f"[git-commit-all] FAILED: git add in {rel}:\n{err1}")
+            sys.exit(1)
+        rc2, _, err2 = run_cmd(f"git commit -m '{message}'", cwd=sub_path)
+        if rc2 != 0:
+            print(f"[git-commit-all] FAILED: git commit in {rel}:\n{err2}")
+            sys.exit(1)
+        if push:
             rc3, _, err3 = run_cmd("git push", cwd=sub_path)
             if rc3 != 0:
                 print(f"[git-commit-all] WARNING: git push failed in {rel}:\n{err3}")
-    else:
-        print("[git-commit-all] No dirty submodules found.")
+        else:
+            print(f"[git-commit-all]   Committed (no push). Use --push to push.")
 
-    # Parent repo: add all (including updated submodule refs), commit, push
     print(f"\n[git-commit-all] Committing in parent repo...")
-    rc1, _, err1 = run_cmd("git add -A", cwd=git_root)
+    rc1, _, err1 = run_cmd("git add -u", cwd=git_root)
     if rc1 != 0:
         print(f"[git-commit-all] FAILED: git add in parent:\n{err1}")
         sys.exit(1)
     rc2, out2, err2 = run_cmd(f"git commit -m '{message}'", cwd=git_root)
     if rc2 != 0:
-        print(f"[git-commit-all] Parent commit result:\n{out2}\n{err2}")
-    rc3, _, err3 = run_cmd("git push", cwd=git_root)
-    if rc3 != 0:
-        print(f"[git-commit-all] WARNING: git push failed in parent:\n{err3}")
+        print(f"[git-commit-all] Parent commit skipped — nothing to commit?")
+        print(f"  stdout: {out2.strip()}\n  stderr: {err2.strip()}")
+    if push:
+        rc3, _, err3 = run_cmd("git push", cwd=git_root)
+        if rc3 != 0:
+            print(f"[git-commit-all] WARNING: git push failed in parent:\n{err3}")
+    else:
+        print(f"[git-commit-all]   Committed (no push). Use --push to push.")
 
     print("[git-commit-all] Done.")
 
@@ -454,8 +478,11 @@ def main():
     search_p = subparsers.add_parser("search", help="Search vault files")
     search_p.add_argument("query", help="Search query (case-insensitive)")
 
-    commit_p = subparsers.add_parser("git-commit-all", help="Commit and push in all dirty submodules + parent repo")
+    commit_p = subparsers.add_parser("git-commit-all", help="Commit across all dirty submodules + parent repo (safe incremental)")
     commit_p.add_argument("message", help="Commit message (e.g. 'feat: something (STORY-XX)')")
+    commit_p.add_argument("--dry-run", action="store_true", help="Show plan without making changes")
+    commit_p.add_argument("--no-push", action="store_true", help="Commit but do not push")
+    commit_p.add_argument("--push", action="store_true", help="Commit and push (opt-in)")
 
     rescan_p = subparsers.add_parser("rescan", help="Rescan vault: fix frontmatter, add wikilinks")
     rescan_p.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
@@ -563,7 +590,10 @@ def main():
         if err:
             print(f"[rescan] stderr: {err}", file=sys.stderr)
     elif args.command == "git-commit-all":
-        cmd_git_commit_all(vault_root, args.message)
+        cmd_git_commit_all(vault_root, args.message,
+                           dry_run=getattr(args, "dry_run", False),
+                           no_push=getattr(args, "no_push", False),
+                           push=getattr(args, "push", False))
     elif args.command == "project" and args.action == "info":
         print(f"# Vault Info")
         print(f"  Path: {vault_root}")
