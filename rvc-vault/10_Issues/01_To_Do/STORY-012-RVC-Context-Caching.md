@@ -4,7 +4,7 @@ type: story
 status: To Do
 priority: P2
 assignee: "@ai-dev"
-epic: "[[EPIC-002]]"
+epic: "[[EPIC-002-Conductor-v0.2-Hardening]]"
 created: 2026-06-28
 tags: [conductor, issue, rvc, workflow]
 title: RVC-Context-Caching

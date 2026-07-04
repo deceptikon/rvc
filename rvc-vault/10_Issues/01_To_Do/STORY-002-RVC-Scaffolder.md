@@ -4,7 +4,7 @@ type: story
 status: To Do
 priority: P1
 assignee: "@ai-dev"
-epic: "[[EPIC-001]]"
+epic: "[[EPIC-001-RVC-Protocol]]"
 created: 2026-04-23
 title: RVC-Scaffolder
 tags: [issue, workflow]

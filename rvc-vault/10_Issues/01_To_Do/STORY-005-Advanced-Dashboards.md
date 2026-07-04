@@ -4,7 +4,7 @@ type: story
 status: To Do
 priority: P2
 assignee: "@human"
-epic: "[[EPIC-001]]"
+epic: "[[EPIC-001-RVC-Protocol]]"
 created: 2026-04-23
 title: Advanced-Dashboards
 tags: [issue, workflow]

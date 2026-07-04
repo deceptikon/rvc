@@ -4,7 +4,7 @@ type: story
 status: To Do
 priority: P2
 assignee: "@ai-dev"
-epic: "[[EPIC-001]]"
+epic: "[[EPIC-002-Conductor-v0.2-Hardening]]"
 created: 2026-06-28
 tags: [issue, rvc, workflow]
 title: Real-YAML-Parser

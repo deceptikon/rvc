@@ -4,7 +4,7 @@ type: story
 status: To Do
 priority: P1
 assignee: "@ai-dev"
-epic: "[[EPIC-002]]"
+epic: "[[EPIC-002-Conductor-v0.2-Hardening]]"
 created: 2026-06-28
 tags: [conductor, issue, workflow]
 title: Parallel-DAG-Execution

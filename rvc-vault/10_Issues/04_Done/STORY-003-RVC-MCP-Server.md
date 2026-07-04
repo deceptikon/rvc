@@ -4,7 +4,7 @@ type: story
 status: Done
 priority: P0
 assignee: "@ai-dev"
-epic: "[[EPIC-001]]"
+epic: "[[EPIC-001-RVC-Protocol]]"
 created: 2026-04-23
 title: RVC-MCP-Server
 tags: [issue, workflow]

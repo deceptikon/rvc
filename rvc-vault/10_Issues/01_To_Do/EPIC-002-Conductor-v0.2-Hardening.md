@@ -4,12 +4,18 @@ type: epic
 status: To Do
 priority: P1
 assignee: "@ai-dev"
-epic: 
+epic:
 created: 2026-06-28
-tags: [conductor, issue, workflow]
+tags:
+  - conductor
+  - issue
+  - workflow
 title: Conductor-v0.2-Hardening
 domain: workflow_meta
-domain_tags: ["rvc", "protocol", "epic"]
+domain_tags:
+  - rvc
+  - protocol
+  - epic
 aliases:
   - EPIC-002
 ---
@@ -37,8 +43,10 @@ Harden the Conductor pipeline for daily autonomous use, add real failure-diagnos
 4. `rvc context` is fetched at most once per run cycle.
 
 ## Linked Stories
-- [[STORY-008]] — Security Hardening: `shell=True` Removal
-- [[STORY-009]] — Real PlanReviser with QA Log Diagnosis
-- [[STORY-010]] — Unit Test Foundation
-- [[STORY-011]] — Parallel DAG Execution in Act Node
-- [[STORY-012]] — RVC Context Caching & Token Optimization
+- [[STORY-008-Eliminate-shell-True]] — Security Hardening: `shell=True` Removal
+- [[STORY-009-Real-PlanReviser]] — Real PlanReviser with QA Log Diagnosis
+- [[STORY-010-Unit-Test-Foundation]] — Unit Test Foundation
+- [[STORY-011-Parallel-DAG-Execution]] — Parallel DAG Execution in Act Node
+- [[STORY-012-RVC-Context-Caching]] — RVC Context Caching & Token Optimization
+- [[STORY-013-RVC-Security-Performance]] — RVC CLI Security & Performance Hardening
+- [[STORY-014-Real-YAML-Parser]] — Replace Ad-Hoc YAML Parser with Real YAML Library

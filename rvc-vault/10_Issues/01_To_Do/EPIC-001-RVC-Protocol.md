@@ -25,7 +25,7 @@ Reinvent MD-file based issue and context handling. A local-first source of truth
 
 ## Requirements
 - [x] Standardized Directory Structure (RVC v1.0).
-- [ ] Context-aware CLI/MCP Tooling ([[STORY-001]], [[STORY-003]]).
-- [ ] Visual Dashboards (Canvas/Kanban) ([[STORY-004]], [[STORY-005]]).
-- [ ] Graph DB Connectivity ([[STORY-006]]).
-- [ ] Git-Sync Automation ([[STORY-007]]).
+- [ ] Context-aware CLI/MCP Tooling ([[STORY-001-Lifecycle-Automation]], [[STORY-003-RVC-MCP-Server]]).
+- [ ] Visual Dashboards (Canvas/Kanban) ([[STORY-004-Obsidian-Templates]], [[STORY-005-Advanced-Dashboards]]).
+- [ ] Graph DB Connectivity ([[STORY-006-Graph-DB-Integration]]).
+- [ ] Git-Sync Automation ([[STORY-007-Git-Sync-Automation]]).

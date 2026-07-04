@@ -293,3 +293,5 @@ Internal tooling for ADLAI and related projects.
 ## Sub-Documents & Context
 - [[RVC/OBSIDIAN_TEMPLATER]]
 - [[RVC/rvc-vault/00_Project/PLAN-RVC-REVIVAL]]
+- [[rvc-vault/10_Issues/01_To_Do/EPIC-001-RVC-Protocol|EPIC-001]]
+- [[rvc-vault/10_Issues/01_To_Do/EPIC-002-Conductor-v0.2-Hardening|EPIC-002]]
