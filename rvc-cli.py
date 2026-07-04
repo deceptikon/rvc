@@ -374,73 +374,110 @@ def cmd_git_commit_all(vault_path, message, dry_run=False, no_push=False, push=F
 
     dirty = _find_dirty_submodules(git_root)
 
-    if not dirty:
-        print("[git-commit-all] No dirty submodules found.")
+    # Check parent repo for staged/unstaged changes (before submodule commits)
+    rc_ps, out_ps, _ = run_cmd("git diff --cached --stat", cwd=git_root)
+    rc_pu, out_pu, _ = run_cmd("git diff --stat", cwd=git_root)
+    parent_staged = out_ps.strip()
+    parent_unstaged = out_pu.strip()
+    has_parent_changes = bool(parent_staged or parent_unstaged)
+
+    if not dirty and not has_parent_changes:
+        print("[git-commit-all] Nothing to do — no dirty submodules and no parent changes.")
         return
 
-    print(f"[git-commit-all] Dirty submodules ({len(dirty)}):")
-    for d in dirty:
-        rel = os.path.relpath(d, git_root)
-        rc_staged, out_staged, _ = run_cmd("git diff --cached --stat", cwd=d)
-        rc_unstaged, out_unstaged, _ = run_cmd("git diff --stat", cwd=d)
-        rc_untracked, out_untracked, _ = run_cmd("git ls-files --others --exclude-standard", cwd=d)
-        staged = out_staged.strip()
-        unstaged = out_unstaged.strip()
-        untracked = out_untracked.strip()
-        print(f"  - {rel}:")
-        if staged:
-            for line in staged.split("\n"):
-                print(f"      staged: {line}")
-        if unstaged:
-            for line in unstaged.split("\n"):
-                print(f"      unstaged: {line}")
-        if untracked:
-            print(f"      untracked: {len(untracked.split(chr(10)))} file(s)")
-        if not staged and not unstaged and not untracked:
-            print(f"      (modified submodule pointer)")
-        if dry_run:
+    if not dirty:
+        print("[git-commit-all] No dirty submodules found.")
+    else:
+        print(f"[git-commit-all] Dirty submodules ({len(dirty)}):")
+        for d in dirty:
+            rel = os.path.relpath(d, git_root)
+            rc_staged, out_staged, _ = run_cmd("git diff --cached --stat", cwd=d)
+            rc_unstaged, out_unstaged, _ = run_cmd("git diff --stat", cwd=d)
+            rc_untracked, out_untracked, _ = run_cmd("git ls-files --others --exclude-standard", cwd=d)
+            staged = out_staged.strip()
+            unstaged = out_unstaged.strip()
+            untracked = out_untracked.strip()
+            print(f"  - {rel}:")
+            if staged:
+                for line in staged.split("\n"):
+                    print(f"      staged: {line}")
+            if unstaged:
+                for line in unstaged.split("\n"):
+                    print(f"      unstaged: {line}")
+            if untracked:
+                print(f"      untracked: {len(untracked.split(chr(10)))} file(s)")
+            if not staged and not unstaged and not untracked:
+                print(f"      (modified submodule pointer)")
+            if dry_run:
+                print(f"      → Would: git add -u && git commit -m '{message}'"
+                      + (" && git push" if push else ""))
+
+        if not dry_run:
+            for sub_path in dirty:
+                rel = os.path.relpath(sub_path, git_root)
+                print(f"\n[git-commit-all] Committing in {rel}...")
+                rc1, _, err1 = run_cmd("git add -u", cwd=sub_path)
+                if rc1 != 0:
+                    print(f"[git-commit-all] FAILED: git add in {rel}:\n{err1}")
+                    sys.exit(1)
+                rc2, _, err2 = run_cmd(f"git commit -m '{message}'", cwd=sub_path)
+                if rc2 != 0:
+                    print(f"[git-commit-all] FAILED: git commit in {rel}:\n{err2}")
+                    sys.exit(1)
+                _ensure_on_branch(sub_path, label=f"{rel}: ")
+                if push:
+                    rc3, _, err3 = run_cmd("git push", cwd=sub_path)
+                    if rc3 != 0:
+                        print(f"[git-commit-all] WARNING: git push failed in {rel}:\n{err3}")
+                else:
+                    print(f"[git-commit-all]   Committed (no push). Use --push to push.")
+            # Submodule commits changed parent refs — force parent processing
+            has_parent_changes = True
+            parent_staged = ""  # re-read parent state below
+            parent_unstaged = ""
+
+    # --- Parent repo section ---
+    if dry_run:
+        if not dirty and not has_parent_changes:
+            return
+        rc_ps2, out_ps2, _ = run_cmd("git diff --cached --stat", cwd=git_root)
+        rc_pu2, out_pu2, _ = run_cmd("git diff --stat", cwd=git_root)
+        pst = out_ps2.strip()
+        pun = out_pu2.strip()
+        if has_parent_changes and not (pst or pun):
+            # Parent had initial changes that submodule commits might have consumed
+            pst = parent_staged
+            pun = parent_unstaged
+        if pst or pun:
+            print(f"\n[git-commit-all] Parent repo changes:")
+            if pst:
+                for line in pst.split("\n"):
+                    print(f"      staged: {line}")
+            if pun:
+                for line in pun.split("\n"):
+                    print(f"      unstaged: {line}")
             print(f"      → Would: git add -u && git commit -m '{message}'"
                   + (" && git push" if push else ""))
-
-    if dry_run:
         print("\n[git-commit-all] Dry-run complete. No changes made.")
         return
 
-    for sub_path in dirty:
-        rel = os.path.relpath(sub_path, git_root)
-        print(f"\n[git-commit-all] Committing in {rel}...")
-        rc1, _, err1 = run_cmd("git add -u", cwd=sub_path)
+    if has_parent_changes or dirty:
+        print(f"\n[git-commit-all] Committing in parent repo...")
+        rc1, _, err1 = run_cmd("git add -u", cwd=git_root)
         if rc1 != 0:
-            print(f"[git-commit-all] FAILED: git add in {rel}:\n{err1}")
+            print(f"[git-commit-all] FAILED: git add in parent:\n{err1}")
             sys.exit(1)
-        rc2, _, err2 = run_cmd(f"git commit -m '{message}'", cwd=sub_path)
+        rc2, out2, err2 = run_cmd(f"git commit -m '{message}'", cwd=git_root)
         if rc2 != 0:
-            print(f"[git-commit-all] FAILED: git commit in {rel}:\n{err2}")
-            sys.exit(1)
-        _ensure_on_branch(sub_path, label=f"{rel}: ")
+            print(f"[git-commit-all] Parent commit skipped — nothing to commit?")
+            print(f"  stdout: {out2.strip()}\n  stderr: {err2.strip()}")
+        _ensure_on_branch(git_root, label="parent: ")
         if push:
-            rc3, _, err3 = run_cmd("git push", cwd=sub_path)
+            rc3, _, err3 = run_cmd("git push", cwd=git_root)
             if rc3 != 0:
-                print(f"[git-commit-all] WARNING: git push failed in {rel}:\n{err3}")
+                print(f"[git-commit-all] WARNING: git push failed in parent:\n{err3}")
         else:
             print(f"[git-commit-all]   Committed (no push). Use --push to push.")
-
-    print(f"\n[git-commit-all] Committing in parent repo...")
-    rc1, _, err1 = run_cmd("git add -u", cwd=git_root)
-    if rc1 != 0:
-        print(f"[git-commit-all] FAILED: git add in parent:\n{err1}")
-        sys.exit(1)
-    rc2, out2, err2 = run_cmd(f"git commit -m '{message}'", cwd=git_root)
-    if rc2 != 0:
-        print(f"[git-commit-all] Parent commit skipped — nothing to commit?")
-        print(f"  stdout: {out2.strip()}\n  stderr: {err2.strip()}")
-    _ensure_on_branch(git_root, label="parent: ")
-    if push:
-        rc3, _, err3 = run_cmd("git push", cwd=git_root)
-        if rc3 != 0:
-            print(f"[git-commit-all] WARNING: git push failed in parent:\n{err3}")
-    else:
-        print(f"[git-commit-all]   Committed (no push). Use --push to push.")
 
     print("[git-commit-all] Done.")
 
