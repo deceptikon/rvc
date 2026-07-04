@@ -31,16 +31,17 @@ This story establishes the pytest-based foundation covering the **entire pipelin
 
 ## Test Files
 
-| # | File | Coverage | GREEN | RED |
-|---|------|----------|-------|-----|
-| 1 | `tests/test_schema.py` | `Plan.validate()`, topo, node_map | 14 | 0 |
-| 2 | `tests/test_workers.py` | `_strip_ansi`, `extract_stream_json`, `WorkerRegistry` | 18 | 0 |
-| 3 | `tests/test_pipeline.py` | Serializers, graph build, routing, node contracts | 10 | 6 |
-| 4 | `tests/test_rvc_cli.py` | All `rvc-cli` subcommands: get/context/issue/create/search/init/git-commit-all | 14 | 5 |
-| 5 | `tests/test_conductor_cmds.py` | All `conductor` subcommands: run/approve/reject/edit/status/list/logs/selftest | 14 | 2 |
-| 6 | `tests/test_gates.py` | G1–G6 gate contracts (ASSEMBLY.md) | 0 | 17 |
-| 7 | `tests/test_pult_stages.py` | `pult gather/validate/inject/prompt/publish` (MAP stages 1a–1d, 11) | 0 | 14 |
-| 8 | `tests/test_infra.py` | dash-client, session_bootstrap, rvc_mcp, agentic-bridge | 13 | 0 |
+| # | File | Coverage | Total | PASS | XFAIL |
+|---|------|----------|-------|------|-------|
+| 1 | `tests/test_schema.py` | `Plan.validate()`, topo, node_map | 14 | 14 | 0 |
+| 2 | `tests/test_workers.py` | `_strip_ansi`, `extract_stream_json`, `WorkerRegistry` | 15 | 15 | 0 |
+| 3 | `tests/test_pipeline.py` | Serializers, graph build, routing, node contracts | 12 | 8 | 4 |
+| 4 | `tests/test_rvc_cli.py` | All `rvc-cli` subcommands: get/context/issue/create/search/init/git-commit-all | 24 | 19 | 5 |
+| 5 | `tests/test_conductor_cmds.py` | All `conductor` subcommands: run/approve/reject/edit/status/list/logs/selftest | 12 | 10 | 2 |
+| 6 | `tests/test_gates.py` | G1–G6 gate contracts (ASSEMBLY.md) | 17 | 0 | 17 |
+| 7 | `tests/test_pult_stages.py` | `pult gather/validate/inject/prompt/publish` (MAP stages 1a–1d, 11) | 15 | 0 | 15 |
+| 8 | `tests/test_infra.py` | dash-client, session_bootstrap, rvc_mcp, agentic-bridge | 12 | 10 | 2 |
+| **TOTAL** | | | **121** | **76** | **45** |
 
 ## Pipeline Stage → Test Mapping (MAP.md)
 
@@ -69,10 +70,11 @@ This story establishes the pytest-based foundation covering the **entire pipelin
 | RED Group | Tests | Goes GREEN In | What changes |
 |-----------|-------|---------------|--------------|
 | `test_gates.py` (17) | G1–G6 contracts | STORY-94/95/96/97/101 | Create `conductor/gates.py` with `GateError`, `check_issue_file`, `validate_bootstrap_payload`, `check_rvc_reachable`, `check_phase_artifact`, `check_qa_passed`, `get_repo_root`, `check_canonical_spec` |
-| `test_pult_stages.py` (14) | gather/validate/inject/prompt/publish | STORY-95/96/99/102 | Create `conductor/pult.py` with subcommand functions |
-| `test_pipeline.py` (6) | bulk_node, prompt_builder, _check_rvc_reachable | STORY-100/101/95 | Add nodes to `build_graph()`, add helper to `pipeline.py` |
+| `test_pult_stages.py` (15) | gather/validate/inject/prompt/publish | STORY-95/96/99/102 | Create `conductor/pult.py` with subcommand functions |
+| `test_pipeline.py` (4) | bulk_node, prompt_builder, _check_rvc_reachable | STORY-100/101/95 | Add nodes to `build_graph()`, add helper to `pipeline.py` |
 | `test_rvc_cli.py` (5) | cmd_init, create duplicate check, shell=True, _next_id race, find_vault_root | STORY-013 | Refactor rvc-cli.py: extract cmd_init, add exists() check, remove shell=True, add file locking |
 | `test_conductor_cmds.py` (2) | cancel, retry subcommands | STORY-013 | Add subcommands to conductor CLI |
+| `test_infra.py` (2) | flow_vault publish, bootstrap decomposition | STORY-00/95 | Create flow vault; decompose session_bootstrap.sh into pult subcommands |
 
 **Total: 45 RED → 121 tests.** When all GREEN: exit code 0, 121 passed, 0 xfailed.
 
@@ -96,13 +98,13 @@ conductor/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py              # shared fixtures: tmp_vault, tmp_git_repo, fake_worker, ...
-│   ├── test_schema.py           # 14 tests — Plan.validate() [GREEN]
-│   ├── test_workers.py          # 18 tests — stream parsing, registry [GREEN]
-│   ├── test_pipeline.py         # 16 tests — graph build, routing, nodes [10G / 6R]
-│   ├── test_rvc_cli.py          # 19 tests — all rvc-cli subcommands [14G / 5R]
-│   ├── test_conductor_cmds.py   # 16 tests — all conductor subcommands [14G / 2R]
-│   ├── test_gates.py            # 17 tests — G1-G6 gate contracts [RED]
-│   ├── test_pult_stages.py      # 14 tests — pult subcommands [RED]
-│   └── test_infra.py            # 13 tests — infra commands [GREEN]
+│   ├── test_schema.py           # 14 tests — Plan.validate() [14G]
+│   ├── test_workers.py          # 15 tests — stream parsing, registry [15G]
+│   ├── test_pipeline.py         # 12 tests — graph build, routing, nodes [8G / 4R]
+│   ├── test_rvc_cli.py          # 24 tests — all rvc-cli subcommands [19G / 5R]
+│   ├── test_conductor_cmds.py   # 12 tests — all conductor subcommands [10G / 2R]
+│   ├── test_gates.py            # 17 tests — G1-G6 gate contracts [17R]
+│   ├── test_pult_stages.py      # 15 tests — pult subcommands [15R]
+│   └── test_infra.py            # 12 tests — infra commands [10G / 2R]
 ├── pyproject.toml               # pytest config + testpaths
 ```
