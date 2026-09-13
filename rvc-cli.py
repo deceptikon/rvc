@@ -263,8 +263,12 @@ def cmd_init(target_path=".", tree="legacy"):
                 f.write(f"tree.{verb}={d}\n")
 
     reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
-    with open(os.path.join(vault_dir, reglament), "w") as f:
-        f.write("# Vault Routing\n")
+    routing_path = os.path.join(vault_dir, reglament)
+    if os.path.exists(routing_path):
+        print(f"[RVC] Keeping existing {reglament} (re-run is non-destructive)")
+    else:
+        with open(routing_path, "w") as f:
+            f.write("# Vault Routing\n")
     _write_project_readme(vault_dir, os.path.basename(vault_dir), ".", "newvault" if newvault else "legacy")
     print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
     print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
@@ -297,8 +301,12 @@ def cmd_project_init(target_path=".", vault_name="vault", tree="legacy"):
                 f.write(f"tree.{verb}={d}\n")
 
     reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
-    with open(os.path.join(vault_dir, reglament), "w") as f:
-        f.write("# Vault Routing\n")
+    routing_path = os.path.join(vault_dir, reglament)
+    if os.path.exists(routing_path):
+        print(f"[RVC] Keeping existing {reglament} (re-run is non-destructive)")
+    else:
+        with open(routing_path, "w") as f:
+            f.write("# Vault Routing\n")
     _write_project_readme(target, os.path.basename(target), vault_name, "newvault" if newvault else "legacy")
     print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
     print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
