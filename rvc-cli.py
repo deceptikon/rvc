@@ -58,6 +58,127 @@ def find_git_root(vault_path):
         curr = os.path.dirname(curr)
     return None
 
+# ── Per-vault tree config (STORY-105) ────────────────────────────────────────
+# .rvc-root may carry `tree.<verb>=<dir>` lines. Absent them, LEGACY_TREE applies,
+# so unconfigured vaults (TEAMFLOW, conductor, dash fixtures) keep their tree.
+
+LEGACY_TREE = {
+    "create": "10_Issues/01_To_Do",
+    "triage": "10_Issues/01_To_Do",
+    "start": "10_Issues/02_Active",
+    "review": "10_Issues/03_Review",
+    "done": "10_Issues/04_Done",
+    "defer": "10_Issues/00_Backlog",
+    "evict": "99_Archive",
+    "supersede": "99_Archive",
+    "roadmap": "00_Project",
+}
+
+NEWVAULT_TREE = {
+    "create": "00_INBOX",
+    "triage": "20_NEXT",
+    "start": "30_ACTIVE",
+    "block": "40_DECIDE",
+    "defer": "50_DEFERRED",
+    "review": "60_DONE",
+    "done": "60_DONE",
+    "evict": "90_ARCHIVE/done",
+    "supersede": "90_ARCHIVE/superseded",
+    "roadmap": "10_CONTEXT",
+}
+
+# Legacy status-name → verb. Folder = state, but the MCP contract and old muscle
+# memory still speak status strings ("To Do", "Review"…). Resolve them to verbs,
+# then verbs to dirs through the vault's tree.
+STATUS_ALIAS = {
+    "inbox": "create",
+    "todo": "triage",
+    "to do": "triage",
+    "to_do": "triage",
+    "next": "triage",
+    "backlog": "defer",
+    "deferred": "defer",
+    "active": "start",
+    "working": "start",
+    "developing": "start",
+    "decide": "block",
+    "blocked": "block",
+    "review": "review",
+    "done": "done",
+    "closed": "done",
+    "evict": "evict",
+    "archive": "evict",
+    "superseded": "supersede",
+}
+
+# Buckets that show in a bare `rvc issue list` (no filter) — hot states only;
+# archive/evict listings are opt-in via a verb or --dir.
+HOT_BUCKET_VERBS = {"create", "triage", "start", "block", "defer", "review", "done"}
+
+LEGACY_STATE_LABEL = {
+    "00_Backlog": "Backlog",
+    "01_To_Do": "To Do",
+    "02_Active": "Active",
+    "03_Review": "Review",
+    "04_Done": "Done",
+}
+
+
+def read_tree_config(vault_path):
+    """Read `tree.<verb>=<dir>` lines from .rvc-root. {} if none (→ legacy)."""
+    root_file = os.path.join(vault_path, ".rvc-root")
+    tree = {}
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("tree.") and "=" in line:
+                    key, _, val = line.partition("=")
+                    tree[key[len("tree."):].strip()] = val.strip()
+    return tree
+
+
+def resolve_tree(vault_path, preset=None):
+    """Effective verb→dir map: vault config, else a preset, else the legacy map."""
+    if preset:
+        return dict(preset)
+    return read_tree_config(vault_path) or dict(LEGACY_TREE)
+
+
+def tree_dirs(tree):
+    """All distinct directories in a resolved tree (sorted, stable)."""
+    return sorted({d for d in tree.values() if d})
+
+
+def hot_dirs(tree):
+    """Directories for the default, unfiltered issue list (excludes archives)."""
+    return sorted({tree[v] for v in HOT_BUCKET_VERBS if v in tree})
+
+
+def state_label(file_path, vault_path):
+    """Derive the issue state from its parent folder — never frontmatter."""
+    parent = os.path.basename(os.path.dirname(file_path))
+    return LEGACY_STATE_LABEL.get(parent, parent)
+
+
+def write_tree_config(vault_path, tree):
+    """(Re)write .rvc-root with a tree.* block, preserving a leading vault= line."""
+    root_file = os.path.join(vault_path, ".rvc-root")
+    keep = []
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("tree.") or not line:
+                    continue
+                keep.append(line)
+    with open(root_file, "w") as f:
+        f.write("# RVC vault root\n")
+        for line in keep:
+            f.write(line + "\n")
+        for verb, d in sorted(tree.items()):
+            f.write(f"tree.{verb}={d}\n")
+
 def sync_before(vault_path):
     git_root = find_git_root(vault_path)
     if git_root:
@@ -94,16 +215,7 @@ def build_vault_index(vault_path):
 def find_file_by_id(vault_path, item_id):
     # Clean the item_id to remove any anchors
     clean_id = item_id.split('#')[0]
-    
-    # Build or reuse the vault index
-    if not hasattr(find_file_by_id, '_vault_cache'):
-        find_file_by_id._vault_cache = {}
-    
-    cache_key = vault_path
-    if cache_key not in find_file_by_id._vault_cache:
-        find_file_by_id._vault_cache[cache_key] = build_vault_index(vault_path)
-    
-    vault_index = find_file_by_id._vault_cache[cache_key]
+    vault_index = build_vault_index(vault_path)
     
     # Exact match first
     if clean_id in vault_index:
@@ -172,13 +284,10 @@ def cmd_context(vault_path, item_id):
             print(f"--- REFERENCE [[{link}]] NOT FOUND IN VAULT ---\n")
 
 def cmd_issue_action(vault_path, issue_id, action):
-    valid_actions = {
-        "start": {"status": "Active", "folder": "10_Issues/02_Active"},
-        "review": {"status": "Review", "folder": "10_Issues/03_Review"},
-        "done": {"status": "Done", "folder": "10_Issues/04_Done"},
-    }
-    if action not in valid_actions:
-        print(f"Error: Invalid action '{action}'. Use start, review, or done.")
+    tree = resolve_tree(vault_path)
+    if action not in tree:
+        print(f"Error: invalid action '{action}' for this vault's tree.")
+        print(f"        Valid actions: {', '.join(sorted(tree.keys()))}")
         sys.exit(1)
 
     sync_before(vault_path)
@@ -188,54 +297,73 @@ def cmd_issue_action(vault_path, issue_id, action):
         print(f"Error: Item {issue_id} not found.")
         sys.exit(1)
 
-    with open(file_path, 'r') as f:
-        content = f.read()
-
-    new_status = valid_actions[action]["status"]
-    target_folder = os.path.join(vault_path, valid_actions[action]["folder"])
+    target_rel = tree[action]
+    target_folder = os.path.join(vault_path, target_rel)
     os.makedirs(target_folder, exist_ok=True)
-
-    new_content = re.sub(r'^status:\s*.*$', f"status: {new_status}", content, flags=re.MULTILINE)
 
     file_name = os.path.basename(file_path)
     new_file_path = os.path.join(target_folder, file_name)
 
     if os.path.abspath(file_path) != os.path.abspath(new_file_path):
-        os.remove(file_path)
+        moved = False
         git_root = find_git_root(vault_path)
         if git_root:
-            run_cmd(f"git rm '{file_path}'", cwd=git_root)
-    
-    with open(new_file_path, 'w') as f:
-        f.write(new_content)
+            rc, _, err = run_cmd(f"git mv '{file_path}' '{new_file_path}'", cwd=git_root)
+            if rc == 0:
+                moved = True
+            else:
+                print(f"[RVC] git mv failed ({err.strip()}); falling back to plain move.")
+        if not moved:
+            if git_root:
+                run_cmd(f"git rm -f '{file_path}'", cwd=git_root)
+            os.rename(file_path, new_file_path)
 
-    print(f"[RVC] Issue {issue_id} marked as {new_status} and moved to {valid_actions[action]['folder']}.")
+    label = state_label(new_file_path, vault_path)
+    print(f"[RVC] Issue {issue_id} moved to {label} ({target_rel}).")
 
-    sync_after(vault_path, [file_path, new_file_path], f"rvc: Issue {issue_id} -> {new_status}")
+    sync_after(vault_path, [file_path, new_file_path], f"rvc: Issue {issue_id} -> {label}")
 
-def cmd_issue_list(vault_path, status):
-    issues_dir = os.path.join(vault_path, "10_Issues")
-    if not os.path.exists(issues_dir):
-        print(f"Error: Issues directory not found at {issues_dir}")
-        sys.exit(1)
+def cmd_issue_list(vault_path, bucket_or_status=None, list_dir=None):
+    tree = resolve_tree(vault_path)
+    scan_dirs = None
 
-    print(f"# RVC Issues List ({status or 'All'})")
+    if list_dir:
+        if list_dir not in tree_dirs(tree):
+            print(f"Error: --dir '{list_dir}' is not a bucket of this vault's tree.")
+            print(f"        Buckets: {', '.join(tree_dirs(tree))}")
+            sys.exit(1)
+        scan_dirs = [list_dir]
+    elif bucket_or_status:
+        verb = bucket_or_status.strip()
+        key = verb.lower()
+        if verb in tree:
+            scan_dirs = [tree[verb]]
+        elif key in STATUS_ALIAS:
+            scan_dirs = [tree[STATUS_ALIAS[key]]]
+        elif os.path.isdir(os.path.join(vault_path, bucket_or_status)):
+            scan_dirs = [bucket_or_status]
+        else:
+            print(f"Error: '{bucket_or_status}' is neither a verb, a status, nor a bucket of this vault.")
+            print(f"        Verbs: {', '.join(sorted(tree.keys()))}")
+            print(f"        Status aliases: {', '.join(sorted(STATUS_ALIAS))}")
+            sys.exit(1)
+    else:
+        scan_dirs = hot_dirs(tree)
+
+    print(f"# RVC Issues List ({bucket_or_status or list_dir or 'All hot buckets'})")
     found_any = False
-    for root, dirs, files in os.walk(issues_dir):
-        for file in files:
-            if not file.endswith(".md"): continue
-            file_path = os.path.join(root, file)
-            with open(file_path, 'r') as f:
-                content = f.read()
-            match = re.search(r'^status:\s*(.*)$', content, flags=re.MULTILINE)
-            file_status = match.group(1).strip() if match else "Unknown"
-            
-            if status and status.lower() not in file_status.lower():
-                continue
-                
-            print(f"- {file} [{file_status}]")
-            found_any = True
-            
+    for d in scan_dirs:
+        root = os.path.join(vault_path, d)
+        if not os.path.isdir(root):
+            continue
+        for r, dirs, files in os.walk(root):
+            for file in files:
+                if not file.endswith(".md"):
+                    continue
+                file_path = os.path.join(r, file)
+                print(f"- {file} [{state_label(file_path, vault_path)}]")
+                found_any = True
+
     if not found_any:
         print("No issues found.")
 
@@ -247,23 +375,41 @@ def _sanitize_filename(name):
 def _next_id(vault_path, prefix="STORY"):
     """Find the next sequential ID for a given prefix (e.g., STORY-30)."""
     max_num = 0
-    issues_dir = os.path.join(vault_path, "10_Issues")
-    if not os.path.exists(issues_dir):
+    tree = resolve_tree(vault_path)
+    for d in tree_dirs(tree):
+        root = os.path.join(vault_path, d)
+        if not os.path.isdir(root):
+            continue
+        for _, _, files in os.walk(root):
+            for f in files:
+                m = re.match(rf'^{re.escape(prefix)}-(\d+)', f)
+                if m:
+                    max_num = max(max_num, int(m.group(1)))
+    if max_num == 0:
         return f"{prefix}-01"
-    for root, dirs, files in os.walk(issues_dir):
-        for f in files:
-            m = re.match(rf'^{re.escape(prefix)}-(\d+)', f)
-            if m:
-                max_num = max(max_num, int(m.group(1)))
     width = max(2, len(str(max_num + 1)))
     return f"{prefix}-{str(max_num + 1).zfill(width)}"
 
 
 def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
-                     priority="Medium", body="", directory="01_To_Do",
+                     priority="Medium", body="", directory=None,
                      epic="", extra_frontmatter=None):
     """Create a new issue file with proper frontmatter."""
-    target_dir = os.path.join(vault_path, "10_Issues", directory)
+    tree = resolve_tree(vault_path)
+    if directory is None:
+        directory = tree["triage"]
+    else:
+        candidates = [directory]
+        if not directory.startswith("10_Issues"):
+            candidates.append("10_Issues/" + directory)
+        resolved = next((c for c in candidates if c in tree_dirs(tree)), None)
+        if resolved is None:
+            print(f"Error: --dir '{directory}' is not a bucket of this vault's tree.")
+            print(f"        Buckets: {', '.join(tree_dirs(tree))}")
+            sys.exit(1)
+        directory = resolved
+
+    target_dir = os.path.join(vault_path, directory)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir, exist_ok=True)
 
@@ -276,13 +422,12 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
         print(f"Error: File already exists: {filepath}")
         sys.exit(1)
 
-    # Build YAML frontmatter
+    # Build YAML frontmatter (no status — folder = state)
     import datetime
     today = datetime.date.today().isoformat()
     lines = [
         "---",
         f"type: {issue_type}",
-        f"status: To Do",
         f"priority: {priority}",
     ]
     if epic:
@@ -523,6 +668,13 @@ def main():
     issue_p = subparsers.add_parser("issue")
     issue_p.add_argument("action_or_id")
     issue_p.add_argument("action_or_status", nargs="?")
+    issue_p.add_argument("--dir", dest="list_dir", default=None,
+                         help="List a specific configured bucket (e.g. --dir 30_ACTIVE)")
+
+    list_p = subparsers.add_parser("list", help="List issues (alias for `issue list`)")
+    list_p.add_argument("status", nargs="?", default=None)
+    list_p.add_argument("--dir", dest="list_dir", default=None,
+                        help="List a specific configured bucket (e.g. --dir 20_NEXT)")
 
     create_p = subparsers.add_parser("create", help="Create a new issue")
     create_p.add_argument("title", help="Issue title")
@@ -534,8 +686,8 @@ def main():
                           choices=["Low", "Medium", "High", "Critical"],
                           help="Priority (default: Medium)")
     create_p.add_argument("--body", default="", help="Initial issue body text")
-    create_p.add_argument("--dir", default="01_To_Do", dest="directory",
-                          help="Target folder (default: 01_To_Do)")
+    create_p.add_argument("--dir", default=None, dest="directory",
+                          help="Bucket for the new issue (default: this vault's inbox/triage bucket)")
     create_p.add_argument("--epic", default="", help="Parent epic name (e.g. EPIC-05-PRD-Phase-2)")
 
     search_p = subparsers.add_parser("search", help="Search vault files")
@@ -552,35 +704,47 @@ def main():
 
     init_p = subparsers.add_parser("init", help="Initialize a new vault (flat — no vault/ subdirectory)")
     init_p.add_argument("target_path", nargs="?", default=".", help="Directory to initialize (default: current)")
+    init_p.add_argument("--tree", choices=["legacy", "newvault"], default="legacy",
+                        help="Vault tree preset (default: legacy)")
 
     project_p = subparsers.add_parser("project")
     project_p.add_argument("action", choices=["init", "info"])
     project_p.add_argument("target_path", nargs="?")
     project_p.add_argument("--vault-name", default="vault",
                            help="Vault directory name (default: vault)")
+    project_p.add_argument("--tree", choices=["legacy", "newvault"], default="legacy",
+                           help="Vault tree preset (default: legacy)")
 
     args = parser.parse_args()
 
     if args.command == "init":
         target = args.target_path or "."
         vault_dir = os.path.abspath(target)
-        os.makedirs(os.path.join(vault_dir, "00_Project"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "00_Backlog"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "01_To_Do"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "02_Active"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "03_Review"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "04_Done"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "20_Specs"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "90_Assets"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "99_Archive"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, ".obsidian"), exist_ok=True)
+        newvault = args.tree == "newvault"
+        if newvault:
+            tree = NEWVAULT_TREE
+            init_dirs = tree_dirs(tree) + [".obsidian"]
+        else:
+            tree = LEGACY_TREE
+            init_dirs = [
+                "00_Project",
+                "10_Issues/00_Backlog", "10_Issues/01_To_Do",
+                "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
+                "20_Specs", "90_Assets", "99_Archive", ".obsidian",
+            ]
+        for d in init_dirs:
+            os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
 
         with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
             f.write("# RVC vault root\n")
+            if newvault:
+                for verb, d in sorted(tree.items()):
+                    f.write(f"tree.{verb}={d}\n")
 
-        with open(os.path.join(vault_dir, "00_Project", "REGLAMENT.md"), "w") as f:
-            f.write("# ProjectReglament\n")
-        print(f"[RVC] Initialized vault structure at {vault_dir}")
+        reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
+        with open(os.path.join(vault_dir, reglament), "w") as f:
+            f.write("# Vault Routing\n")
+        print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
         print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
         print(f"[RVC] Tip: open this directory directly in Obsidian (no vault/ subfolder)")
         return
@@ -589,23 +753,32 @@ def main():
         target = args.target_path or "."
         vault_name = args.vault_name
         vault_dir = os.path.join(os.path.abspath(target), vault_name)
-        os.makedirs(os.path.join(vault_dir, "00_Project"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "00_Backlog"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "01_To_Do"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "02_Active"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "03_Review"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "10_Issues", "04_Done"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "20_Specs"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "90_Assets"), exist_ok=True)
-        os.makedirs(os.path.join(vault_dir, "99_Archive"), exist_ok=True)
+        newvault = args.tree == "newvault"
+        if newvault:
+            tree = NEWVAULT_TREE
+            init_dirs = tree_dirs(tree)
+        else:
+            tree = LEGACY_TREE
+            init_dirs = [
+                "00_Project",
+                "10_Issues/00_Backlog", "10_Issues/01_To_Do",
+                "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
+                "20_Specs", "90_Assets", "99_Archive",
+            ]
+        for d in init_dirs:
+            os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
 
         # Write .rvc-root marker
         with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
             f.write(f"vault={vault_name}\n")
+            if newvault:
+                for verb, d in sorted(tree.items()):
+                    f.write(f"tree.{verb}={d}\n")
 
-        with open(os.path.join(vault_dir, "00_Project", "REGLAMENT.md"), "w") as f:
-            f.write("# ProjectReglament\n")
-        print(f"[RVC] Initialized vault structure at {vault_dir}")
+        reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
+        with open(os.path.join(vault_dir, reglament), "w") as f:
+            f.write("# Vault Routing\n")
+        print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
         print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
         if vault_name != "vault":
             print(f"[RVC] Custom vault name: '{vault_name}' — open this path in Obsidian")
@@ -622,12 +795,14 @@ def main():
         cmd_context(vault_root, args.id)
     elif args.command == "issue":
         if args.action_or_id == "list":
-            cmd_issue_list(vault_root, args.action_or_status)
+            cmd_issue_list(vault_root, args.action_or_status, list_dir=args.list_dir)
         else:
             if not args.action_or_status:
                 cmd_get(vault_root, args.action_or_id)
             else:
                 cmd_issue_action(vault_root, args.action_or_id, args.action_or_status)
+    elif args.command == "list":
+        cmd_issue_list(vault_root, args.status, list_dir=args.list_dir)
     elif args.command == "create":
         cmd_create_issue(
             vault_root,
@@ -661,7 +836,8 @@ def main():
         print(f"# Vault Info")
         print(f"  Path: {vault_root}")
         print(f"  Name: {os.path.basename(vault_root)}")
-        roadmap = os.path.join(vault_root, "00_Project", "ROADMAP.md")
+        tree = resolve_tree(vault_root)
+        roadmap = os.path.join(vault_root, tree.get("roadmap", "00_Project"), "ROADMAP.md")
         if os.path.exists(roadmap):
             print(f"\n--- ROADMAP.md ---")
             with open(roadmap, 'r') as f:
