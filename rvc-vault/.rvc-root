@@ -1,1 +1,11 @@
 vault=rvc-vault
+tree.block=40_DECIDE
+tree.create=00_INBOX
+tree.defer=50_DEFERRED
+tree.done=60_DONE
+tree.evict=90_ARCHIVE/done
+tree.review=60_DONE
+tree.roadmap=10_CONTEXT
+tree.start=30_ACTIVE
+tree.supersede=90_ARCHIVE/superseded
+tree.triage=20_NEXT

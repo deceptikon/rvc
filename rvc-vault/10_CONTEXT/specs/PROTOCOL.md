@@ -57,7 +57,31 @@ uv sync   # uses pyproject.toml
 
 ## Vault Structure
 
-Every project vault must follow this layout:
+Two layout presets. The `.rvc-root` `tree.<verb>=<dir>` map decides; vaults without one
+fall back to **legacy**.
+
+**newvault** (current default — this RVC vault is dogfooding it, folder = state):
+
+```
+<project>-vault/
+├── .rvc-root              # Marker + tree.<verb>=<dir> config (vault=<dirname>)
+├── 00_INBOX/              # `create` lands here
+├── 10_CONTEXT/            # constitution + durable knowledge
+│   ├── ROUTING.md         # the constitution — buckets, triage, session protocol
+│   ├── DECISIONS.md       # architectural decisions (why)
+│   ├── GOTCHAS.md         # non-obvious bugs & environment traps
+│   ├── STATE.json         # active issue / session state
+│   ├── ROADMAP.md         # roadmap
+│   └── specs/             # protocol + spec docs (PROTOCOL.md, REGLAMENT.md …)
+├── 20_NEXT/               # triaged, ready to pick up
+├── 30_ACTIVE/             # in progress
+├── 40_DECIDE/ 50_DEFERRED/ 60_DONE/
+└── 90_ARCHIVE/
+    ├── done/              # evict verb
+    └── superseded/        # supersede verb
+```
+
+**legacy** (backwards-compatible fallback — pre-2026-09 vaults):
 
 ```
 <project>-vault/
@@ -78,6 +102,17 @@ Every project vault must follow this layout:
 ├── 20_Specs/          # Architecture docs, PRDs
 ├── 90_Assets/         # Media, PDFs
 └── 99_Archive/        # Deprecated notes
+```
+
+### Quickstart — RVC-fy a project
+
+```bash
+mkdir myproject && cd myproject
+git init
+rvc project init . --tree newvault     # → vault/ + README.md at project root
+rvc create "First idea"                # → 20_NEXT
+rvc issue STORY-01 start               # → 30_ACTIVE (git mv)
+rvc issue STORY-01 done                # → 60_DONE
 ```
 
 ### Initialize a New Vault

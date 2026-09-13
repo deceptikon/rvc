@@ -1,50 +1,32 @@
-# RVC — folder-as-state vault engine
+# RVC
 
-`rvc-cli.py` manages **RVC vaults**: lightweight, git-tracked issue & knowledge vaults where
-**the folder an issue sits in *is* its status.** A single stdlib-only script, no other
-dependencies.
+Managed with **RVC** — a lightweight, folder-as-state issue & knowledge vault at `rvc-vault/`.
 
-- **Folder = state.** Transitions (`start`, `done`, `block`, `evict`, …) are plain `git mv` —
-  recoverable through git history, greppable, no frontmatter drift.
-- **Per-vault config.** `.rvc-root` may carry `tree.<verb>=<dir>` lines; unconfigured vaults
-  keep working on the legacy `10_Issues` map.
-- **Self-installing.** No pip package — `rvc` on PATH is a symlink to this script.
+> **State lives in folders, not frontmatter.** Where an issue file sits *is* its status.
 
-## Install
+## Where to look next
 
-```bash
-git clone git@github.com:deceptikon/rvc.git
-cd rvc
-python3 rvc-cli.py install        # → ~/.local/bin/rvc (idempotent)
-rvc install --check               # verify
-```
+| Path | What it is |
+|------|-----------|
+| `rvc-vault/.rvc-root` | Vault marker + `tree.<verb>=<dir>` map for this vault |
+| `rvc-vault/10_CONTEXT/ROUTING.md` | The constitution — bucket law, triage rules, session protocol |
+| `rvc-vault/10_CONTEXT/DECISIONS.md` | Architectural decisions and their rationale |
+| `rvc-vault/10_CONTEXT/GOTCHAS.md` | Non-obvious bugs and environment traps |
+| `rvc-vault/10_CONTEXT/STATE.json` | Current active issue / session state |
+| `rvc-vault/` | Lifecycle buckets (new vaults: 00_INBOX … 90_ARCHIVE; legacy: 10_Issues) |
 
-## Quickstart — RVC-fy a new project
+## Commands
 
 ```bash
-mkdir myproject && cd myproject
-git init                          # transitions are git mv — git is the safety net
-rvc project init . --tree newvault   # creates vault/ + README.md at the project root
-rvc create "First idea"           # lands in 20_NEXT
-rvc issue list                    # see it
-rvc issue STORY-01 start          # → 30_ACTIVE (git mv)
-rvc issue STORY-01 done           # → 60_DONE
+rvc issue list              # everything open
+rvc issue create "First"    # idea → inbox
+rvc issue STORY-01 start    # → active (a git mv under the hood)
+rvc context STORY-01        # pull linked context
+rvc issue STORY-01 done     # → done
 ```
 
-`project init` also writes a **generic README.md at the project root** pointing at the vault
-layout, the daily commands, and the constitution — the obvious place to look next for anyone
-opening the project. Never overwrites an existing README.
+Transitions are plain `git mv`, so every move is recoverable through git history.
 
-## Vault trees
+## Protocol
 
-| Preset | Layout | Constitution |
-|--------|--------|--------------|
-| `newvault` | `00_INBOX 10_CONTEXT 20_NEXT 30_ACTIVE 40_DECIDE 50_DEFERRED 60_DONE 90_ARCHIVE/{done,superseded}` | `vault/10_CONTEXT/ROUTING.md` |
-| `legacy` | `00_Project 10_Issues/{00_Backlog..04_Done} 20_Specs 90_Assets 99_Archive` | `vault/00_Project/REGLAMENT.md` |
-
-## Documentation
-
-- **`rvc-vault/20_Specs/PROTOCOL.md`** — the protocol: structure, CLI usage, lifecycle, git discipline.
-- **`rvc-vault/00_Project/`** — roadmap and decisions.
-- Live contract reference: ADLAI (`~/X/ADLAI/adlai-vault/`) runs on the `newvault` tree,
-  TEAMFLOW/conductor/dash on the legacy fallback.
+Read `rvc-vault/10_CONTEXT/ROUTING.md` first — it overrides the rest of this file.
