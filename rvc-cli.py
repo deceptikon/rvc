@@ -186,13 +186,16 @@ README_TEMPLATE = """# {PROJECT_NAME}
 Managed with **RVC** — a lightweight, folder-as-state issue & knowledge vault at `{VAULT}/`.
 
 > **State lives in folders, not frontmatter.** Where an issue file sits *is* its status.
+> **Context lives in the vault, not this file.** Everything an agent or developer needs starts
+> at the vault's single context file — `{VAULT}/{ROUTING}`. The root
+> `AGENTS.md`/`CLAUDE.md`/`GEMINI.md`/`QWEN.md` are symlinks to it.
 
 ## Where to look next
 
 | Path | What it is |
 |------|-----------|
+| `{VAULT}/{ROUTING}` | The constitution — bucket law, triage rules, session protocol (canonical) |
 | `{VAULT}/.rvc-root` | Vault marker + `tree.<verb>=<dir>` map for this vault |
-| `{VAULT}/{ROUTING}` | The constitution — bucket law, triage rules, session protocol |
 | `{VAULT}/{CONTEXT}/DECISIONS.md` | Architectural decisions and their rationale |
 | `{VAULT}/{CONTEXT}/GOTCHAS.md` | Non-obvious bugs and environment traps |
 | `{VAULT}/{CONTEXT}/STATE.json` | Current active issue / session state |
@@ -200,9 +203,11 @@ Managed with **RVC** — a lightweight, folder-as-state issue & knowledge vault 
 
 ## Commands
 
+Run from anywhere in the project — the vault is auto-detected.
+
 ```bash
 rvc issue list              # everything open
-rvc issue create "First"    # idea → inbox
+rvc create "First"          # idea → inbox
 rvc issue STORY-01 start    # → active (a git mv under the hood)
 rvc context STORY-01        # pull linked context
 rvc issue STORY-01 done     # → done
@@ -214,6 +219,33 @@ Transitions are plain `git mv`, so every move is recoverable through git history
 
 Read `{VAULT}/{ROUTING}` first — it overrides the rest of this file.
 """
+
+# Harness-read context files at the project root: symlinks onto the vault's
+# constitution, so there is exactly one canonical context file per project.
+CONTEXT_LINK_NAMES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", "QWEN.md")
+
+
+def _link_context_roots(project_root, vault_rel, routing_rel):
+    """Symlink root AGENTS.md/CLAUDE.md/GEMINI.md/QWEN.md -> <vault>/<constitution>.
+
+    Relative link bodies so the project stays portable (copy, mount, worktree).
+    Idempotent; re-points links that already exist. A real file with one of these
+    names is never clobbered — it is project content, not ours to replace.
+    """
+    target_rel = os.path.normpath(os.path.join(vault_rel, routing_rel))
+    want = os.path.realpath(os.path.join(project_root, target_rel))
+    for name in CONTEXT_LINK_NAMES:
+        link = os.path.join(project_root, name)
+        if os.path.lexists(link) and not os.path.islink(link):
+            print(f"[RVC] Keeping existing {name} (real file, not a symlink) — not linking")
+            continue
+        if os.path.islink(link):
+            if os.path.realpath(link) == want:
+                print(f"[RVC] Already linked: {name} -> {target_rel}")
+                continue
+            os.remove(link)
+        os.symlink(target_rel, link)
+        print(f"[RVC] Linked {name} -> {target_rel}")
 
 
 def _write_project_readme(project_root, project_name, vault_rel, tree_preset):
@@ -269,6 +301,7 @@ def cmd_init(target_path=".", tree="legacy"):
     else:
         with open(routing_path, "w") as f:
             f.write("# Vault Routing\n")
+    _link_context_roots(vault_dir, ".", reglament)
     _write_project_readme(vault_dir, os.path.basename(vault_dir), ".", "newvault" if newvault else "legacy")
     print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
     print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
@@ -307,6 +340,7 @@ def cmd_project_init(target_path=".", vault_name="vault", tree="legacy"):
     else:
         with open(routing_path, "w") as f:
             f.write("# Vault Routing\n")
+    _link_context_roots(target, vault_name, reglament)
     _write_project_readme(target, os.path.basename(target), vault_name, "newvault" if newvault else "legacy")
     print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
     print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
