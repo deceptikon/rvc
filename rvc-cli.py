@@ -358,16 +358,34 @@ def sync_before(vault_path):
         if rc != 0:
             print(f"[RVC] Warning: Git pull failed:\n{err}")
 
+def _push_enabled(vault_path):
+    """Push is OPT-IN. Enabled only by env `RVC_PUSH=1` or `.rvc-root` line `push=true`.
+    Prevents silent, unprompted git push from sync_after (review finding: auto-push
+    synced origin/main without review)."""
+    if os.environ.get("RVC_PUSH", "").strip() == "1":
+        return True
+    root_file = os.path.join(vault_path, ".rvc-root")
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("push=") and line[len("push="):].strip().lower() == "true":
+                    return True
+    return False
+
 def sync_after(vault_path, file_paths, msg):
     git_root = find_git_root(vault_path)
     if git_root:
-        print("[RVC] Committing and pushing state...")
+        print("[RVC] Committing state...")
         for fp in file_paths:
             run_cmd(f"git add '{fp}'", cwd=git_root)
         run_cmd(f"git commit -m '{msg}'", cwd=git_root)
-        rc, out, err = run_cmd("git push", cwd=git_root)
-        if rc != 0:
-            print(f"[RVC] Warning: Git push failed:\n{err}")
+        if _push_enabled(vault_path):
+            rc, out, err = run_cmd("git push", cwd=git_root)
+            if rc != 0:
+                print(f"[RVC] Warning: Git push failed:\n{err}")
+        else:
+            print("[RVC] Skipping push (opt-in: RVC_PUSH=1 env or `push=true` in .rvc-root)")
 
 def build_vault_index(vault_path):
     """Build an in-memory index of all files in the vault for O(1) lookups."""
@@ -568,7 +586,7 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     """Create a new issue file with proper frontmatter."""
     tree = resolve_tree(vault_path)
     if directory is None:
-        directory = tree["triage"]
+        directory = tree.get("create") or tree["triage"]
     else:
         candidates = [directory]
         if not directory.startswith("10_Issues"):
@@ -626,7 +644,10 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
 
     print(f"[RVC] Created {filename}")
     print(f"      {filepath}")
-    print(f"      Hint: rvc issue {issue_id} start")
+    create_bucket = tree.get("create")
+    hint_action = "triage" if (create_bucket and directory == create_bucket
+                               and create_bucket != tree.get("triage")) else "start"
+    print(f"      Hint: rvc issue {issue_id} {hint_action}")
     return filepath
 
 
