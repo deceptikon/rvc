@@ -89,6 +89,27 @@ rvc project init --vault-name myproject-vault /path/to/project
 # Creates: myproject-vault/.rvc-root + all standard directories
 ```
 
+`init` and `project init` also write a generic **README.md at the project root**
+(rendered from `README_TEMPLATE` inside `rvc-cli.py`; placeholders `{PROJECT_NAME}`
+`{VAULT}` `{ROUTING}` `{CONTEXT}`). It maps the vault layout ("where to look next"),
+lists the daily commands, and points at the constitution — so a fresh project has an
+obvious next step without any onboarding. An existing README.md is **never overwritten**.
+
+### Install the CLI
+
+`rvc-cli.py` is a single stdlib-only script; "install" means putting `rvc` on PATH:
+
+```bash
+python3 rvc-cli.py install            # symlink → ~/.local/bin/rvc (idempotent)
+python3 rvc-cli.py install --check    # verify without changing anything
+python3 rvc-cli.py install --dir X    # install elsewhere (test / containers)
+python3 rvc-cli.py install --force    # replace an unrelated file already at the target
+rvc install                           # same, once installed
+```
+
+Until installed, run it directly: `python3 rvc-cli.py issue list` (or call it via
+`$RVC_BIN` in scripts — see ADLAI `session_bootstrap.sh`).
+
 ---
 
 ## CLI Usage

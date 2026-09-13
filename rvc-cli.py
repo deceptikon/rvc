@@ -179,6 +179,169 @@ def write_tree_config(vault_path, tree):
         for verb, d in sorted(tree.items()):
             f.write(f"tree.{verb}={d}\n")
 
+# Generic project README, copied to the ROOT of whichever project gets RVC-fied
+# by `init` / `project init`. Placeholders: {PROJECT_NAME} {VAULT} {ROUTING} {CONTEXT}.
+README_TEMPLATE = """# {PROJECT_NAME}
+
+Managed with **RVC** — a lightweight, folder-as-state issue & knowledge vault at `{VAULT}/`.
+
+> **State lives in folders, not frontmatter.** Where an issue file sits *is* its status.
+
+## Where to look next
+
+| Path | What it is |
+|------|-----------|
+| `{VAULT}/.rvc-root` | Vault marker + `tree.<verb>=<dir>` map for this vault |
+| `{VAULT}/{ROUTING}` | The constitution — bucket law, triage rules, session protocol |
+| `{VAULT}/{CONTEXT}/DECISIONS.md` | Architectural decisions and their rationale |
+| `{VAULT}/{CONTEXT}/GOTCHAS.md` | Non-obvious bugs and environment traps |
+| `{VAULT}/{CONTEXT}/STATE.json` | Current active issue / session state |
+| `{VAULT}/` | Lifecycle buckets (new vaults: 00_INBOX … 90_ARCHIVE; legacy: 10_Issues) |
+
+## Commands
+
+```bash
+rvc issue list              # everything open
+rvc issue create "First"    # idea → inbox
+rvc issue STORY-01 start    # → active (a git mv under the hood)
+rvc context STORY-01        # pull linked context
+rvc issue STORY-01 done     # → done
+```
+
+Transitions are plain `git mv`, so every move is recoverable through git history.
+
+## Protocol
+
+Read `{VAULT}/{ROUTING}` first — it overrides the rest of this file.
+"""
+
+
+def _write_project_readme(project_root, project_name, vault_rel, tree_preset):
+    """Render README_TEMPLATE and drop it at the project root. Never overwrites an
+    existing README.md (the project may already have one)."""
+    readme = os.path.join(project_root, "README.md")
+    if os.path.exists(readme):
+        print(f"[RVC] Skipping README.md — already exists at {readme}")
+        return
+    if tree_preset == "newvault":
+        routing, ctx = "10_CONTEXT/ROUTING.md", "10_CONTEXT"
+    else:
+        routing, ctx = "00_Project/REGLAMENT.md", "00_Project"
+    body = README_TEMPLATE.replace("{PROJECT_NAME}", project_name)
+    body = body.replace("{VAULT}", vault_rel)
+    body = body.replace("{ROUTING}", routing)
+    body = body.replace("{CONTEXT}", ctx)
+    # Any leftover placeholder means the template drifted — refuse to ship it.
+    if "{" in body and "}" in body:
+        raise ValueError(f"README_TEMPLATE placeholder not replaced: {body[body.index('{'):body.index('}') + 1]}")
+    with open(readme, "w") as f:
+        f.write(body)
+    print(f"[RVC] Wrote project README: {readme}")
+
+def cmd_init(target_path=".", tree="legacy"):
+    """Scaffold a new RVC vault directly in target_path (flat — no vault/ subdir)."""
+    vault_dir = os.path.abspath(target_path)
+    newvault = tree == "newvault"
+    if newvault:
+        t = dict(NEWVAULT_TREE)
+        init_dirs = tree_dirs(t) + [".obsidian"]
+    else:
+        t = dict(LEGACY_TREE)
+        init_dirs = [
+            "00_Project",
+            "10_Issues/00_Backlog", "10_Issues/01_To_Do",
+            "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
+            "20_Specs", "90_Assets", "99_Archive", ".obsidian",
+        ]
+    for d in init_dirs:
+        os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
+
+    with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
+        f.write("# RVC vault root\n")
+        if newvault:
+            for verb, d in sorted(t.items()):
+                f.write(f"tree.{verb}={d}\n")
+
+    reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
+    with open(os.path.join(vault_dir, reglament), "w") as f:
+        f.write("# Vault Routing\n")
+    _write_project_readme(vault_dir, os.path.basename(vault_dir), ".", "newvault" if newvault else "legacy")
+    print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
+    print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
+    print(f"[RVC] Tip: open this directory directly in Obsidian (no vault/ subfolder)")
+    return vault_dir
+
+def cmd_project_init(target_path=".", vault_name="vault", tree="legacy"):
+    """Scaffold a project: <target>/<vault_name>/ vault + README at the project root."""
+    target = os.path.abspath(target_path)
+    vault_dir = os.path.join(target, vault_name)
+    newvault = tree == "newvault"
+    if newvault:
+        t = dict(NEWVAULT_TREE)
+        init_dirs = tree_dirs(t)
+    else:
+        t = dict(LEGACY_TREE)
+        init_dirs = [
+            "00_Project",
+            "10_Issues/00_Backlog", "10_Issues/01_To_Do",
+            "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
+            "20_Specs", "90_Assets", "99_Archive",
+        ]
+    for d in init_dirs:
+        os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
+
+    with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
+        f.write(f"vault={vault_name}\n")
+        if newvault:
+            for verb, d in sorted(t.items()):
+                f.write(f"tree.{verb}={d}\n")
+
+    reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
+    with open(os.path.join(vault_dir, reglament), "w") as f:
+        f.write("# Vault Routing\n")
+    _write_project_readme(target, os.path.basename(target), vault_name, "newvault" if newvault else "legacy")
+    print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
+    print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
+    if vault_name != "vault":
+        print(f"[RVC] Custom vault name: '{vault_name}' — open this path in Obsidian")
+    return vault_dir
+
+def cmd_install(install_dir=None, force=False, check=False):
+    """Install: symlink this script as `rvc` on PATH (default ~/.local/bin).
+
+    Idempotent — a second run verifies and returns 0. --check verifies only.
+    Refuses to clobber an existing unrelated file unless --force.
+    """
+    install_dir = install_dir or os.path.expanduser("~/.local/bin")
+    source = os.path.realpath(__file__)
+    target = os.path.join(install_dir, "rvc")
+
+    if check:
+        if os.path.islink(target) and os.path.realpath(target) == source:
+            print(f"OK: {target} -> {source}")
+            return 0
+        print(f"NOT INSTALLED: {target} -> {source}")
+        return 1
+
+    if os.path.lexists(target):
+        if os.path.islink(target) and os.path.realpath(target) == source:
+            print(f"Already installed: {target} -> {source}")
+            return 0
+        if not force:
+            print(f"Refusing to overwrite {target} (not this rvc). Pass --force to override.",
+                  file=sys.stderr)
+            return 1
+
+    os.makedirs(install_dir, exist_ok=True)
+    try:
+        os.symlink(source, target)
+    except FileExistsError:
+        os.remove(target)
+        os.symlink(source, target)
+    print(f"Installed: {target} -> {source}")
+    print("Install dir must be on PATH. Next: `rvc project init <dir>` to RVC-fy a project.")
+    return 0
+
 def sync_before(vault_path):
     git_root = find_git_root(vault_path)
     if git_root:
@@ -715,73 +878,27 @@ def main():
     project_p.add_argument("--tree", choices=["legacy", "newvault"], default="legacy",
                            help="Vault tree preset (default: legacy)")
 
+    install_p = subparsers.add_parser(
+        "install",
+        help="Install this script as `rvc` on PATH (symlink to ~/.local/bin/rvc)")
+    install_p.add_argument("--dir", default=None,
+                           help="Install directory (default: ~/.local/bin)")
+    install_p.add_argument("--force", action="store_true",
+                           help="Overwrite an existing unrelated file at the target")
+    install_p.add_argument("--check", action="store_true",
+                           help="Verify installation and exit (no changes)")
+
     args = parser.parse_args()
 
+    if args.command == "install":
+        sys.exit(cmd_install(args.dir, force=args.force, check=args.check))
+
     if args.command == "init":
-        target = args.target_path or "."
-        vault_dir = os.path.abspath(target)
-        newvault = args.tree == "newvault"
-        if newvault:
-            tree = NEWVAULT_TREE
-            init_dirs = tree_dirs(tree) + [".obsidian"]
-        else:
-            tree = LEGACY_TREE
-            init_dirs = [
-                "00_Project",
-                "10_Issues/00_Backlog", "10_Issues/01_To_Do",
-                "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
-                "20_Specs", "90_Assets", "99_Archive", ".obsidian",
-            ]
-        for d in init_dirs:
-            os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
-
-        with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
-            f.write("# RVC vault root\n")
-            if newvault:
-                for verb, d in sorted(tree.items()):
-                    f.write(f"tree.{verb}={d}\n")
-
-        reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
-        with open(os.path.join(vault_dir, reglament), "w") as f:
-            f.write("# Vault Routing\n")
-        print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
-        print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
-        print(f"[RVC] Tip: open this directory directly in Obsidian (no vault/ subfolder)")
+        cmd_init(args.target_path or ".", args.tree)
         return
 
     if args.command == "project" and args.action == "init":
-        target = args.target_path or "."
-        vault_name = args.vault_name
-        vault_dir = os.path.join(os.path.abspath(target), vault_name)
-        newvault = args.tree == "newvault"
-        if newvault:
-            tree = NEWVAULT_TREE
-            init_dirs = tree_dirs(tree)
-        else:
-            tree = LEGACY_TREE
-            init_dirs = [
-                "00_Project",
-                "10_Issues/00_Backlog", "10_Issues/01_To_Do",
-                "10_Issues/02_Active", "10_Issues/03_Review", "10_Issues/04_Done",
-                "20_Specs", "90_Assets", "99_Archive",
-            ]
-        for d in init_dirs:
-            os.makedirs(os.path.join(vault_dir, d), exist_ok=True)
-
-        # Write .rvc-root marker
-        with open(os.path.join(vault_dir, ".rvc-root"), "w") as f:
-            f.write(f"vault={vault_name}\n")
-            if newvault:
-                for verb, d in sorted(tree.items()):
-                    f.write(f"tree.{verb}={d}\n")
-
-        reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
-        with open(os.path.join(vault_dir, reglament), "w") as f:
-            f.write("# Vault Routing\n")
-        print(f"[RVC] Initialized {'newvault' if newvault else 'legacy'} vault structure at {vault_dir}")
-        print(f"[RVC] Marker file: {vault_dir}/.rvc-root")
-        if vault_name != "vault":
-            print(f"[RVC] Custom vault name: '{vault_name}' — open this path in Obsidian")
+        cmd_project_init(args.target_path or ".", args.vault_name, args.tree)
         return
 
     vault_root = find_vault_root(args.path)
