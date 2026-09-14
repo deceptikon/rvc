@@ -2,7 +2,9 @@
 import os
 import sys
 import re
+import json
 import argparse
+import datetime as dt
 import subprocess
 
 def run_cmd(cmd, cwd=None):
@@ -114,6 +116,11 @@ STATUS_ALIAS = {
 # Buckets that show in a bare `rvc issue list` (no filter) — hot states only;
 # archive/evict listings are opt-in via a verb or --dir.
 HOT_BUCKET_VERBS = {"create", "triage", "start", "block", "defer", "review", "done"}
+
+# Legacy priority words → the P0-P3 vocabulary that newvault trees sort by. Used only when the
+# vault's own tree declares a `block` bucket (i.e. it is newvault-shaped); legacy vaults keep
+# Low/Medium/High/Critical untouched.
+LEGACY_PRIORITY_TO_P = {"Critical": "P0", "High": "P1", "Medium": "P2", "Low": "P3"}
 
 LEGACY_STATE_LABEL = {
     "00_Backlog": "Backlog",
@@ -619,6 +626,13 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
                      epic="", extra_frontmatter=None):
     """Create a new issue file with proper frontmatter."""
     tree = resolve_tree(vault_path)
+    # newvault trees sort a P0-P3 vocabulary (ADLAI ROUTING §5.3); the legacy words mint strays
+    # there. A tree that declares a `block` bucket is newvault-shaped, so translate rather than
+    # refuse — the caller's intent survives, the queue stays sortable.
+    if "block" in tree and priority in LEGACY_PRIORITY_TO_P:
+        translated = LEGACY_PRIORITY_TO_P[priority]
+        print(f"[RVC] priority '{priority}' -> '{translated}' (this tree sorts P0-P3)")
+        priority = translated
     if directory is None:
         directory = tree.get("create") or tree["triage"]
     else:
@@ -880,6 +894,273 @@ def cmd_search(vault_path, query):
         print(f"No results for '{query}'")
 
 
+# ── Plate rendering: `rvc plate` ─────────────────────────────────────────────
+# The ordered state of a vault, computed from the tree. The lane *rules* belong to the
+# governing vault's constitution (ADLAI `ROUTING.md` §5.3); this renderer stays generic —
+# verbs resolve through the vault's own tree, so a legacy vault without a `block` bucket
+# yields empty decide lanes instead of crashing. Team-specific facts (who is who, who
+# decides) are read from `.rvc-root`, never hardcoded here:
+#
+#   alias.Q=q,Qwen,qwen,qwen-code        canonical first, then every handle that means it
+#   plate.owner=@deceptikon              the deciding seat on a `tables/` surface
+#
+# Identity is caller-supplied: without `--as` the CLI renders the tree lanes and says so,
+# keeping `rvc` identity-free by default (the STORY-106-selftest-loop verdict). Passing
+# `--as` does not make the CLI *know* anyone — it is a filter argument, and resolving
+# "$AGENT / STATE.json" stays where the verdict put it: in the ritual driver.
+
+PLATE_ASK_LINE_RE = re.compile(r"^\s*-\s*\[ \]\s*(.*)$")
+PLATE_HANDLE_RE = re.compile(r"@([\w.+-]+)")
+PLATE_SEP_RE = re.compile(r"\s+[-—:]\s+")
+PLATE_HEADER_RE = re.compile(r"^##\s+([^@\n]+?)\s*@\s*(\d{4}-\d{2}-\d{2})", re.M)
+PLATE_DATE_RE = re.compile(r"^\s*(?:updated|date|created)\s*:\s*(\d{4}-\d{2}-\d{2})\s*$", re.M)
+PLATE_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+PLATE_ISSUE_TYPES = ("story", "epic", "bug", "task")
+
+
+def read_plate_config(vault_path):
+    """Return ({lowercase handle → canonical}, owner_canonical) from `.rvc-root`."""
+    aliases, owner = {}, None
+    root_file = os.path.join(vault_path, ".rvc-root")
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("alias."):
+                    canonical, _, handles = line[len("alias."):].partition("=")
+                    canonical = canonical.strip()
+                    for handle in handles.split(","):
+                        key = handle.strip().lstrip("@").lower()
+                        if key:
+                            aliases[key] = canonical
+                elif line.startswith("plate.owner"):
+                    owner = line.partition("=")[2].strip() or None
+    return aliases, owner
+
+
+def resolve_alias(raw, aliases):
+    """Canonicalize a handle typed by a human or stored in a doc; unknown handles pass through.
+
+    Applied to *both* the `--as` argument and every ask box, so an unrecognized handle still compares
+    equal on both sides — symmetry is what keeps a typo from silently dropping a thread.
+    """
+    if not raw:
+        return None
+    key = raw.strip().lstrip("@")
+    if not key:
+        return None
+    canonical = aliases.get(key.lower())
+    if canonical:
+        return canonical
+    for candidate in aliases.values():
+        if candidate.lstrip("@").lower() == key.lower():
+            return candidate
+    return "@" + key
+
+
+def plate_frontmatter(text):
+    """Minimal `key: value` frontmatter read — issue files never need a YAML parser."""
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    fields = {}
+    for line in text[3:end].splitlines():
+        match = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", line)
+        if match and match.group(1) not in fields:
+            fields[match.group(1)] = match.group(2).strip().strip("\"'")
+    return fields
+
+
+def plate_asks(text, aliases):
+    """Open ask boxes as [(canonical, note)] — fenced text is never an ask."""
+    asks, in_fence = [], False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = PLATE_ASK_LINE_RE.match(line)
+        if not match:
+            continue
+        body = match.group(1)
+        parts = PLATE_SEP_RE.split(body, maxsplit=1)
+        head = parts[0]
+        note = parts[1].strip() if len(parts) > 1 else ""
+        handles = PLATE_HANDLE_RE.findall(head) or PLATE_HANDLE_RE.findall(body)
+        asks.extend((resolve_alias(h, aliases), note) for h in handles)
+    return asks
+
+
+def plate_last_activity(text, fields):
+    """Latest `## <Author>@<date>` section, else the newest frontmatter date."""
+    headers = PLATE_HEADER_RE.findall(text)
+    for candidate in ([headers[-1][1]] if headers else []) + PLATE_DATE_RE.findall(text):
+        try:
+            return dt.date.fromisoformat(candidate)
+        except ValueError:
+            continue
+    stamp = fields.get("updated") or fields.get("created") or fields.get("date")
+    try:
+        return dt.date.fromisoformat(stamp) if stamp else None
+    except ValueError:
+        return None
+
+
+def plate_surface(fpath, vault_path, aliases):
+    try:
+        with open(fpath, "r", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return None
+    fields = plate_frontmatter(text)
+    type_name = fields.get("type", "")
+    name = os.path.basename(fpath)
+    headers = PLATE_HEADER_RE.findall(text)
+    return {
+        "path": os.path.relpath(fpath, vault_path).replace(os.sep, "/"),
+        "name": name,
+        "type": type_name,
+        "priority": fields.get("priority", ""),
+        "is_issue": type_name in PLATE_ISSUE_TYPES or name.startswith(("STORY-", "EPIC-")),
+        "asks": plate_asks(text, aliases),
+        "open_boxes": len(re.findall(r"^\s*-\s*\[ \]", text, re.M)),
+        "done_boxes": len(re.findall(r"^\s*-\s*\[[xX]\]", text, re.M)),
+        "last": plate_last_activity(text, fields),
+        "last_speaker": headers[-1][0].strip() if headers else "",
+    }
+
+
+def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None):
+    """Render the plate: seven lanes computed from folders, priorities and open ask boxes."""
+    tree = resolve_tree(vault_path)
+    aliases, owner = read_plate_config(vault_path)
+    me = resolve_alias(as_alias, aliases) if as_alias else None
+    today = today or dt.date.today()
+
+    watched = {
+        "inbox": tree.get("create"),
+        "next": tree.get("triage"),
+        "active": tree.get("start"),
+        "decide": tree.get("block"),
+        "deferred": tree.get("defer"),
+    }
+    surfaces = []
+    for rel_dir in [d for d in watched.values() if d]:
+        base = os.path.join(vault_path, rel_dir)
+        if not os.path.isdir(base):
+            continue
+        for root, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for fname in sorted(filenames):
+                if not fname.endswith(".md") or fname.startswith("_"):
+                    continue  # shapes are not surfaces
+                surface = plate_surface(os.path.join(root, fname), vault_path, aliases)
+                if surface:
+                    surfaces.append(surface)
+
+    lanes = {k: [] for k in ("owes_turn", "owner", "active", "next", "waiting", "overdue", "inbox")}
+    decide = watched["decide"] or ""
+    waiting_paths = set()
+
+    for surface in surfaces:
+        rel = surface["path"]
+        in_decide = bool(decide) and rel.startswith(decide + "/")
+        sub = rel[len(decide) + 1 :].split("/")[0] if in_decide else ""
+        is_deliberation = in_decide and sub in ("tables", "debates", "reviews")
+
+        for canonical, note in surface["asks"]:
+            row = dict(surface)
+            row["ask"] = note
+            if owner and canonical == owner:
+                # Reading as the owner, the verdict asks *are* your turns — not a third lane,
+                # and not dropped between the two.
+                (lanes["owes_turn"] if me == owner else lanes["owner"]).append(row)
+            elif me and canonical == me:
+                lanes["owes_turn"].append(row)
+
+        if rel.startswith((watched["inbox"] or "?") + "/"):
+            lanes["inbox"].append(surface)
+        elif rel.startswith((watched["active"] or "?") + "/") and surface["is_issue"]:
+            lanes["active"].append(surface)
+        elif rel.startswith((watched["next"] or "?") + "/") and surface["is_issue"]:
+            lanes["next"].append(surface)
+        elif in_decide and not is_deliberation and not surface["is_issue"]:
+            lanes["waiting"].append(surface)  # §5.2 R10 registered exception
+            waiting_paths.add(rel)
+        elif rel.startswith((watched["deferred"] or "?") + "/") and surface["is_issue"]:
+            lanes["waiting"].append(surface)
+            waiting_paths.add(rel)
+
+    for surface in surfaces:
+        if surface["path"] in waiting_paths or not surface["last"]:
+            continue
+        aged = (today - surface["last"]).days
+        on_surface = surface["path"].startswith((decide or "?") + "/") or surface["path"].startswith(
+            (watched["active"] or "?") + "/"
+        )
+        if aged >= stale_days and on_surface:
+            lanes["overdue"].append(dict(surface, age_days=aged))
+
+    lanes["next"].sort(key=lambda s: (PLATE_PRIORITY_ORDER.get(s["priority"], 9), s["name"]))
+    lanes["active"].sort(key=lambda s: s["name"])
+    lanes["waiting"].sort(key=lambda s: s["name"])
+    lanes["inbox"].sort(key=lambda s: s["name"])
+    lanes["overdue"].sort(key=lambda s: -s["age_days"])
+    lanes["owner"].sort(key=lambda s: s["path"])
+    lanes["owes_turn"].sort(key=lambda s: s["path"])
+
+    if fmt == "json":
+        payload = {
+            "vault": vault_path,
+            "as": me,
+            "owner": owner,
+            "today": today.isoformat(),
+            "identity_lanes": bool(me),
+            "lanes": {
+                key: [
+                    {k: (v.isoformat() if isinstance(v, dt.date) else v) for k, v in row.items() if k != "asks"}
+                    for row in rows
+                ]
+                for key, rows in lanes.items()
+            },
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    titles = {
+        "owes_turn": f"YOU OWE A TURN (as {me})" if me else "YOU OWE A TURN (identity-free: pass --as)",
+        "owner": "AWAITING THE OWNER",
+        "active": "ACTIVE (WIP cap 2)",
+        "next": "NEXT — the queue",
+        "waiting": "WAITING — deferred on purpose (not late)",
+        "overdue": f"OVERDUE — no new section ≥ {stale_days} days",
+        "inbox": "INBOX — deposits, acknowledged not actionable",
+    }
+    print(f"PLATE — {os.path.basename(vault_path)} — {today.isoformat()} — derived from the tree")
+    for key, rows in lanes.items():
+        print(f"\n{titles[key]}  [{len(rows)}]")
+        if not rows:
+            print("  —")
+            continue
+        for row in rows:
+            if key in ("owes_turn", "owner"):
+                ask = f" — {row['ask']}" if row.get("ask") else ""
+                print(f"  {row['path']}{ask}")
+            elif key == "active":
+                print(f"  {row['name']}  open={row['open_boxes']} done={row['done_boxes']}")
+            elif key == "next":
+                print(f"  {row['priority'] or '—':>3}  {row['name']}")
+            elif key == "overdue":
+                print(f"  {row['age_days']:>3}d  {row['path']}  (last: {row['last_speaker']})")
+            elif key == "inbox":
+                print(f"  {row['name']}  type={row['type'] or '—'}")
+            else:
+                print(f"  {row['name']}  pri={row['priority'] or '—'}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="RVC CLI - Vault Context Interface")
     parser.add_argument("--path", default=".", help="Path to project or vault")
@@ -902,15 +1183,29 @@ def main():
     list_p.add_argument("--dir", dest="list_dir", default=None,
                         help="List a specific configured bucket (e.g. --dir 20_NEXT)")
 
+    plate_p = subparsers.add_parser(
+        "plate", help="Render the plate: lanes computed from folders, priorities and open asks"
+    )
+    plate_p.add_argument("--as", dest="as_alias", default=None,
+                         help="Canonicalize this handle for the owed-turn lane (e.g. --as D). "
+                              "Omit it for an identity-free render (tree lanes only).")
+    plate_p.add_argument("--format", choices=("text", "json"), default="text")
+    plate_p.add_argument("--stale-days", type=int, default=7,
+                         help="Overdue threshold in days without a new section (default: 7)")
+
     create_p = subparsers.add_parser("create", help="Create a new issue")
     create_p.add_argument("title", help="Issue title")
     create_p.add_argument("--prefix", default="STORY", help="ID prefix (default: STORY)")
     create_p.add_argument("--type", default="story", dest="issue_type",
                           choices=["story", "bug", "task", "epic"],
                           help="Issue type (default: story)")
-    create_p.add_argument("--priority", default="Medium",
-                          choices=["Low", "Medium", "High", "Critical"],
-                          help="Priority (default: Medium)")
+    create_p.add_argument(
+        "--priority",
+        default="Medium",
+        choices=["P0", "P1", "P2", "P3", "Low", "Medium", "High", "Critical"],
+        help="Priority (default: Medium). newvault trees sort P0-P3 (ADLAI ROUTING §5.3);"
+        " the legacy names remain accepted for vaults that still use them.",
+    )
     create_p.add_argument("--body", default="", help="Initial issue body text")
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue (default: this vault's inbox/triage bucket)")
@@ -983,6 +1278,8 @@ def main():
                 cmd_issue_action(vault_root, args.action_or_id, args.action_or_status)
     elif args.command == "list":
         cmd_issue_list(vault_root, args.status, list_dir=args.list_dir)
+    elif args.command == "plate":
+        cmd_plate(vault_root, as_alias=args.as_alias, fmt=args.format, stale_days=args.stale_days)
     elif args.command == "create":
         cmd_create_issue(
             vault_root,
