@@ -414,13 +414,22 @@ def _push_enabled(vault_path):
                     return True
     return False
 
-def sync_after(vault_path, file_paths, msg):
+def sync_after(vault_path, file_paths, msg, skip_ci=True):
     git_root = find_git_root(vault_path)
     if git_root:
         print("[RVC] Committing state...")
         for fp in file_paths:
             run_cmd(f"git add '{fp}'", cwd=git_root)
-        run_cmd(f"git commit -m '{msg}'", cwd=git_root)
+        # Add [skip ci] tag by default for vault transitions, can be overridden
+        if skip_ci:
+            # If message already contains [skip ci], don't duplicate
+            if "[skip ci]" not in msg:
+                commit_msg = f"{msg} [skip ci]"
+            else:
+                commit_msg = msg
+        else:
+            commit_msg = msg
+        run_cmd(f"git commit -m '{commit_msg}'", cwd=git_root)
         if _push_enabled(vault_path):
             rc, out, err = run_cmd("git push", cwd=git_root)
             if rc != 0:
@@ -513,7 +522,7 @@ def cmd_context(vault_path, item_id):
         else:
             print(f"--- REFERENCE [[{link}]] NOT FOUND IN VAULT ---\n")
 
-def cmd_issue_action(vault_path, issue_id, action):
+def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
     tree = resolve_tree(vault_path)
     if action not in tree:
         print(f"Error: invalid action '{action}' for this vault's tree.")
@@ -551,7 +560,7 @@ def cmd_issue_action(vault_path, issue_id, action):
     label = state_label(new_file_path, vault_path)
     print(f"[RVC] Issue {issue_id} moved to {label} ({target_rel}).")
 
-    sync_after(vault_path, [file_path, new_file_path], f"rvc: Issue {issue_id} -> {label}")
+    sync_after(vault_path, [file_path, new_file_path], f"rvc: Issue {issue_id} -> {label}", skip_ci=skip_ci)
 
 def cmd_issue_list(vault_path, bucket_or_status=None, list_dir=None):
     tree = resolve_tree(vault_path)
@@ -623,7 +632,7 @@ def _next_id(vault_path, prefix="STORY"):
 
 def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
                      priority="Medium", body="", directory=None,
-                     epic="", extra_frontmatter=None):
+                     epic="", extra_frontmatter=None, skip_ci=True):
     """Create a new issue file with proper frontmatter."""
     tree = resolve_tree(vault_path)
     # newvault trees sort a P0-P3 vocabulary (ADLAI ROUTING §5.3); the legacy words mint strays
@@ -696,6 +705,10 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     hint_action = "triage" if (create_bucket and directory == create_bucket
                                and create_bucket != tree.get("triage")) else "start"
     print(f"      Hint: rvc issue {issue_id} {hint_action}")
+    
+    # Automatically commit the new issue file with [skip ci]
+    sync_after(vault_path, [filepath], f"rvc: Created issue {issue_id}: {title}", skip_ci=skip_ci)
+    
     return filepath
 
 
@@ -1177,6 +1190,8 @@ def main():
     issue_p.add_argument("action_or_status", nargs="?")
     issue_p.add_argument("--dir", dest="list_dir", default=None,
                          help="List a specific configured bucket (e.g. --dir 30_ACTIVE)")
+    issue_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
+                         help="Disable [skip ci] in commit message (default: enabled)")
 
     list_p = subparsers.add_parser("list", help="List issues (alias for `issue list`)")
     list_p.add_argument("status", nargs="?", default=None)
@@ -1210,6 +1225,8 @@ def main():
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue (default: this vault's inbox/triage bucket)")
     create_p.add_argument("--epic", default="", help="Parent epic name (e.g. EPIC-05-PRD-Phase-2)")
+    create_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
+                          help="Disable [skip ci] in commit message (default: enabled)")
 
     search_p = subparsers.add_parser("search", help="Search vault files")
     search_p.add_argument("query", help="Search query (case-insensitive)")
@@ -1275,7 +1292,7 @@ def main():
             if not args.action_or_status:
                 cmd_get(vault_root, args.action_or_id)
             else:
-                cmd_issue_action(vault_root, args.action_or_id, args.action_or_status)
+                cmd_issue_action(vault_root, args.action_or_id, args.action_or_status, skip_ci=args.skip_ci)
     elif args.command == "list":
         cmd_issue_list(vault_root, args.status, list_dir=args.list_dir)
     elif args.command == "plate":
@@ -1290,6 +1307,7 @@ def main():
             body=args.body,
             directory=args.directory,
             epic=args.epic,
+            skip_ci=args.skip_ci,
         )
     elif args.command == "search":
         cmd_search(vault_root, args.query)
