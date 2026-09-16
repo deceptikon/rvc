@@ -71,7 +71,7 @@ rvc issue ⟨ID⟩ ⟨action⟩ [--skip-ci]
 ```
 - `issue list` — list issues; optional positional filters by status alias or bucket,
   `--dir` lists a specific configured bucket.
-- `issue ⟨ID⟩` — print the issue file (alias of `rvc get`).
+- `issue ⟨ID⟩` — hidden alias of `rvc get` (kept working, never advertised in help).
 - `issue ⟨ID⟩ ⟨action⟩` — transition the issue through the vault's tree
   (`triage`, `start`, `block`, `defer`, `review`, `done`, `evict`, `supersede`,
   plus `create`); the valid set comes from the vault's own `.rvc-root`
@@ -150,27 +150,27 @@ Commit across all dirty submodules plus the parent repo (safe incremental).
 
 ## Notes on ambiguity & duplication (detected while writing this doc)
 
-1. **`rvc issue ⟨ID⟩` ≡ `rvc get ⟨ID⟩`** — one fetcher spelled two ways, and
-   `issue ⟨ID⟩`'s hint block advertises `rvc context` but not `rvc get`. Keep both
-   or merge; decide once.
-2. **`rvc list` duplicates `rvc issue list`** — the alias is welcome for muscle
-   memory, but help must surface both so users do not think they are different.
-3. **`issue ⟨ID⟩ ⟨action⟩` vs `issue list`** — the first positional is
-   overloaded: `list` is a subcommand, anything else is read as an ID. Help text
-   must state this explicitly; it is the single most confusing parse in the CLI.
-4. **`project init` vs `init`** — `init` makes a flat vault, `project init` makes
-   a project with a vault subdirectory. Both take `--tree`; one takes
-   `--vault-name`. Keep the split, but the one-line help must not say "initialize"
-   for both without the distinction.
-5. **`rescan` vs `doctor --fix` overlap** — both rewrite frontmatter on
-   block-bucket trees. `doctor --fix` is surgical (status/priority only), `rescan`
-   is broad (tag/wikilink normalization). Help must call out the difference to
-   prevent `rescan` from being the default "clean my vault" reflex.
-6. **Tree actions include `create`** — `rvc issue ⟨ID⟩ create` is a valid
-   transition on trees that declare a `create` bucket. This collides conceptually
-   with `rvc create ⟨title⟩`. Harmless today (different positional shapes), but the
-   transition list help should not claim "lifecycle verbs only".
-7. **Minted frontmatter says `started:` where vault files say `created:`** — the
-   `create` command writes `started: ⟨today⟩`; existing vault stories carry
-   `created:`. Same concept, two field names. The help/reference must not imply
-   they are interchangeable, and a single canonical name should be picked.
+Resolutions were decided at STORY-032 triage; the help implementation must match
+them, not re-litigate them.
+
+1. **`rvc get ⟨ID⟩` is the primary viewer; `rvc issue ⟨ID⟩` is a hidden alias.**
+   The `issue` first positional cannot carry three grammars (`list` subcommand, ID
+   viewer, ID+action transition) in help. `issue` help says "view: `rvc get ⟨ID⟩`";
+   the alias keeps working but is never advertised.
+2. **`rvc list` stays an alias of `rvc issue list`.** Both help texts say so.
+3. **`issue ⟨ID⟩ ⟨action⟩` vs `issue list`** — the overloaded first positional is
+   resolved by rule 1: only `list` and ID+action remain, and help states the parse
+   explicitly.
+4. **`project init` vs `init`** — both keep. `init` makes a flat vault; `project
+   init` makes a project with a vault subdirectory. Help distinguishes them
+   explicitly instead of saying "initialize" for both.
+5. **`rescan` vs `doctor --fix`** — both keep; distinct scope. `doctor --fix` is
+   surgical (status/priority only, constitution repair), `rescan` is broad
+   (tag/wikilink/frontmatter normalization). Help warns `rescan` is the broader
+   rewrite so it is not the default "clean my vault" reflex.
+6. **Tree actions include `create`** (`rvc issue ⟨ID⟩ create`) — emergent property
+   of the tree-verb model, not a CLI duplicate. Acknowledged in transition help;
+   not removed.
+7. **Minted frontmatter says `started:` where vault files say `created:`** — same
+   concept, two field names. Help/reference must not imply they are
+   interchangeable; a single canonical name should be picked (pending decision).
