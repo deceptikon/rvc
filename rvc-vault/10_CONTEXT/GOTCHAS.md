@@ -26,3 +26,11 @@
   (MCP layer, integrations) that minted one field-line greps passed since folder-owns-state was only
   enforced in the frontmatter builder. The create path refuses with exit 1 — catch `SystemExit` in
   callers that talk to `cmd_create_issue` directly.
+- **`rvc context` soft results are policy-ranked, not raw BM25.** Archive buckets (`tree.evict` /
+  `tree.supersede`) are indexed but never suggested, and docs under `tree.roadmap` (`10_CONTEXT`)
+  carry a ×1.5/×1.2 prior; `b=1.0` length normalization is deliberate. Changing any of these moves
+  the hand-labeled benchmark — `tests/test_context_benchmark.py` pins recall@5 ≥ 80% (currently 92%,
+  measured on a scratch copy of the live vault, never the vault itself).
+- **The context cache is keyed by Document ID, and colliding ids last-win.** Two files carrying the
+  same `id:` frontmatter (or the same `PREFIX-NN` filename shape) collapse into one document in
+  `.rvc-context-cache.json`; `rvc doctor` does not audit identity collisions (yet).

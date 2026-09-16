@@ -4,6 +4,8 @@ import sys
 import re
 import json
 import time
+import math
+import hashlib
 import argparse
 import datetime as dt
 import subprocess
@@ -231,7 +233,7 @@ Run from anywhere in the project — the vault is auto-detected.
 rvc issue list              # everything open
 rvc create "First"          # idea → inbox
 rvc issue STORY-01 start    # → active (a git mv under the hood)
-rvc context STORY-01        # pull linked context
+rvc context STORY-01        # target + linked refs + ranked related context
 rvc issue STORY-01 done     # → done
 ```
 
@@ -299,6 +301,7 @@ def _write_project_readme(project_root, project_name, vault_rel, tree_preset):
 # append these to the vault's own .gitignore (idempotent, non-clobbering).
 VAULT_GITIGNORE_LINES = (
     ".rvc-create.lock",
+    ".rvc-context-cache.json",
     "**/.obsidian/workspace.json",
     ".~lock.*#",
 )
@@ -506,21 +509,44 @@ def build_vault_index(vault_path):
                 vault_index[base_name] = os.path.join(root, file)
     return vault_index
 
-def find_file_by_id(vault_path, item_id):
-    # Clean the item_id to remove any anchors
-    clean_id = item_id.split('#')[0]
-    vault_index = build_vault_index(vault_path)
-    
+def _parse_id_alias(item_id):
+    """Parse `PREFIX-NN[-title]` into (lowercase prefix, int) for unpadded matching.
+
+    `STORY-033`, `STORY-33`, `STORY-033-Some-Title` and `story-33` all parse to
+    `("story", 33)`; `Q-STORY-106` and `ROUTING` return None (not an id shape).
+    """
+    m = re.match(r"^([A-Za-z]+)-0*(\d+)(?:-.*)?$", (item_id or "").strip())
+    if not m:
+        return None
+    return m.group(1).lower(), int(m.group(2))
+
+
+def _find_in_index(vault_index, item_id):
+    """Resolve an id against a prebuilt index (exact, prefix, then alias match)."""
+    clean_id = item_id.split('#')[0].strip()
+    if not clean_id:
+        return None
+
     # Exact match first
     if clean_id in vault_index:
         return vault_index[clean_id]
-    
+
     # Prefix match (e.g., item_id="STORY-05" matches "STORY-05-some-title")
     for filename in vault_index.keys():
         if filename.startswith(clean_id + "-"):
             return vault_index[filename]
-    
+
+    # Unpadded numerals (STORY-33 == STORY-033 == story-33)
+    want = _parse_id_alias(clean_id)
+    if want:
+        for filename in vault_index.keys():
+            if _parse_id_alias(filename) == want:
+                return vault_index[filename]
     return None
+
+
+def find_file_by_id(vault_path, item_id):
+    return _find_in_index(build_vault_index(vault_path), item_id)
 
 def cmd_get(vault_path, item_id):
     file_path = find_file_by_id(vault_path, item_id)
@@ -536,46 +562,709 @@ def cmd_get(vault_path, item_id):
     print(f"   rvc context {item_id}")
     print("="*40)
 
-def cmd_context(vault_path, item_id):
+# ── Semantic context retrieval: `rvc context` (STORY-033) ────────────────────
+# Zero-dependency BM25 over the whole vault, stdlib only. Identity is the
+# immutable Document ID (`STORY-033`, `ROUTING`, …); the cache keeps a path
+# pointer beside the terms, so a folder transition (`git mv`) repaths with zero
+# re-tokenization. A missing or corrupt cache cold-starts transparently.
+#
+# Ranking policy (rationale in DECISIONS.md, 2026-09-16):
+# - Sections are scored independently; a document's score is its best section.
+# - Archive buckets (tree.evict / tree.supersede) are indexed — a hard wikilink
+#   may point at them — but are never offered as soft suggestions: evicted docs
+#   are not live context.
+# - Documents under the vault's roadmap/knowledge dir carry a prior (root x1.5,
+#   nested x1.2): `rvc context` exists to surface the constitution, DECISIONS,
+#   GOTCHAS and specs, not debate transcripts. Measured recall@5 on the
+#   STORY-033 hand-labeled benchmark: 69% without the prior, 92% with it.
+CONTEXT_CACHE_NAME = ".rvc-context-cache.json"
+CONTEXT_CACHE_VERSION = 1
+CONTEXT_DEFAULT_TOP_K = 3
+CONTEXT_DEFAULT_BUDGET = 40000
+CONTEXT_BM25_K1 = 1.5
+# b=1.0 is full length normalization: a long debate transcript must not outrank
+# a short reference by accumulating weak matches. Measured on the STORY-033
+# benchmark: recall@5 77% at b=0.75 (okapi default) vs 92% at b=1.0.
+CONTEXT_BM25_B = 1.0
+CONTEXT_SUMMARY_CHARS = 500
+CONTEXT_MATCH_LIMIT = 6
+CONTEXT_KNOWLEDGE_ROOT_BOOST = 1.5
+CONTEXT_KNOWLEDGE_SUBDIR_BOOST = 1.2
+
+CONTEXT_TRUNCATED_FMT = "... [truncated {n} characters to satisfy budget] ..."
+CONTEXT_OMITTED_FMT = "... [omitted {n} characters to satisfy budget] ..."
+
+CONTEXT_STOPWORDS = frozenset("""
+a an and are as at be been but by can could did do does for from had has have
+he her his how i if in into is it its may might more most must no nor not of
+on or our out over own said she should so some such than that the their them
+then there these they this those to too under until up upon us use used using
+was we were what when where which while who whom why will with would you your
+""".split())
+
+CONTEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*")
+CONTEXT_H1_RE = re.compile(r"^#\s+(.*)$")
+CONTEXT_H2_RE = re.compile(r"^#{2,6}\s+(.*)$")
+CONTEXT_FENCE_RE = re.compile(r"^\s*```")
+CONTEXT_TITLE_KEYS = frozenset(("title", "id", "aliases"))
+CONTEXT_TAG_KEYS = frozenset(("tags", "domain_tags", "keywords"))
+
+
+def _context_canon(token):
+    """Canonical token form: `STORY-013` and `STORY-13` become `story-13`."""
+    parts = re.split(r"([-_.])", token)
+    for i, part in enumerate(parts):
+        if i % 2 == 0 and part.isdigit() and len(part) > 1:
+            parts[i] = part.lstrip("0") or "0"
+    return "".join(parts)
+
+
+def _context_emit(weights, text, weight, surfaces=None):
+    """Accumulate weighted terms from `text`; kebab ids also emit their parts."""
+    for match in CONTEXT_TOKEN_RE.finditer(text):
+        raw = match.group(0)
+        token = _context_canon(raw.lower())
+        if len(token) >= 2 and token not in CONTEXT_STOPWORDS:
+            weights[token] = weights.get(token, 0.0) + weight
+            if surfaces is not None and token not in surfaces:
+                surfaces[token] = raw
+        for part in re.split(r"[-_.]", raw):
+            sub = _context_canon(part.lower())
+            if sub == token or len(sub) < 2 or sub in CONTEXT_STOPWORDS:
+                continue
+            weights[sub] = weights.get(sub, 0.0) + weight * 0.5
+            if surfaces is not None and sub not in surfaces:
+                surfaces[sub] = part
+
+
+def _context_chunk_terms(chunk, surfaces=None):
+    """Weighted terms for one section: title/id 3x, tags 2.5x, headings 2x."""
+    weights = {}
+    lines = chunk.splitlines()
+    i = 0
+    if lines and lines[0].strip() == "---":
+        i = 1
+        while i < len(lines) and lines[i].strip() != "---":
+            m = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", lines[i])
+            if m:
+                key = m.group(1).lower()
+                if key in CONTEXT_TITLE_KEYS:
+                    _context_emit(weights, m.group(2), 3.0, surfaces)
+                elif key in CONTEXT_TAG_KEYS:
+                    _context_emit(weights, m.group(2), 2.5, surfaces)
+                else:
+                    _context_emit(weights, m.group(2), 1.5, surfaces)
+            i += 1
+        i += 1
+    in_fence = False
+    for line in lines[i:]:
+        if CONTEXT_FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            _context_emit(weights, line, 1.0, surfaces)
+            continue
+        m1 = CONTEXT_H1_RE.match(line)
+        if m1:
+            _context_emit(weights, m1.group(1), 3.0, surfaces)
+            continue
+        m2 = CONTEXT_H2_RE.match(line)
+        if m2:
+            _context_emit(weights, m2.group(1), 2.0, surfaces)
+            continue
+        _context_emit(weights, line, 1.0, surfaces)
+    return weights
+
+
+def _context_chunks(text):
+    """Split a doc into citable chunks: frontmatter, then one chunk per heading."""
+    chunks, current, in_fence = [], [], False
+    for line in text.splitlines():
+        if CONTEXT_FENCE_RE.match(line):
+            in_fence = not in_fence
+        if not in_fence and (CONTEXT_H1_RE.match(line) or CONTEXT_H2_RE.match(line)) and current:
+            chunks.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        chunks.append("\n".join(current))
+    return [c for c in chunks if c.strip()]
+
+
+def _context_terms(text, surfaces=None):
+    """Weighted term footprint of a document (merge of its chunks)."""
+    merged = {}
+    for chunk in _context_chunks(text):
+        for token, weight in _context_chunk_terms(chunk, surfaces=surfaces).items():
+            merged[token] = merged.get(token, 0.0) + weight
+    return merged
+
+
+def _context_split_frontmatter(text):
+    """(raw frontmatter incl. fences, body) — (None, text) when absent."""
+    if not text.startswith("---"):
+        return None, text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None, text
+    return text[:end + 4], text[end + 4:]
+
+
+def _context_summary(text):
+    """Frontmatter + title + heading outline + first 500 chars (AC4 trim form)."""
+    raw, body = _context_split_frontmatter(text)
+    headings = re.findall(r"(?m)^#{1,6}\s+.*$", body)
+    stripped = re.sub(r"(?m)^#{1,6}\s+.*$", "", body).strip()
+    parts = [raw] if raw else []
+    parts.extend(headings)
+    if stripped:
+        parts.append(stripped[:CONTEXT_SUMMARY_CHARS])
+    return "\n".join(parts)
+
+
+def _context_goal_summary(text):
+    """Frontmatter + goal/problem/acceptance sections (for --mode summary)."""
+    raw, body = _context_split_frontmatter(text)
+    sections = re.split(r"(?m)^(##\s+.*)$", body)
+    kept = []
+    for i in range(1, len(sections), 2):
+        heading = sections[i]
+        content = sections[i + 1] if i + 1 < len(sections) else ""
+        if re.search(r"goal|acceptance|problem|context|summary|objective|why",
+                     heading, re.I):
+            kept.append((heading + content).strip())
+    if not kept:
+        return _context_summary(text)
+    parts = [raw] if raw else []
+    parts.append("\n\n".join(kept))
+    return "\n".join(parts)
+
+
+def _context_doc_id(rel_path, text):
+    """Immutable Document ID: frontmatter `id:` else the filename's id shape."""
+    fields = plate_frontmatter(text)
+    doc_id = fields.get("id")
+    if doc_id:
+        return doc_id
+    base = os.path.basename(rel_path)
+    if base.endswith(".md"):
+        base = base[:-3]
+    m = re.match(r"^([A-Za-z]+-\d+)", base)
+    return m.group(1) if m else base
+
+
+def _context_doc_title(text, rel_path):
+    """Human title: frontmatter `title:` else the first H1 else the filename."""
+    fields = plate_frontmatter(text)
+    if fields.get("title"):
+        return fields["title"].strip().strip("\"'")
+    m = re.search(r"(?m)^#\s+(.*)$", text)
+    if m:
+        return m.group(1).strip()
+    return os.path.basename(rel_path)
+
+
+def context_cache_path(vault_path):
+    return os.path.join(vault_path, CONTEXT_CACHE_NAME)
+
+
+def _context_hash(text):
+    return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+
+
+def _context_read(vault_path, rel_path):
+    try:
+        with open(os.path.join(vault_path, rel_path), "r",
+                  encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _context_scan(vault_path):
+    """{rel_path: (mtime, size)} for every .md file (hidden dirs skipped)."""
+    found = {}
+    for root, dirs, files in os.walk(vault_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files:
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue
+            found[os.path.relpath(path, vault_path).replace(os.sep, "/")] = (
+                st.st_mtime, st.st_size)
+    return found
+
+
+def _context_empty_cache():
+    return {"version": CONTEXT_CACHE_VERSION, "docs": {}, "postings": {},
+            "chunk_count": 0, "chunk_total_len": 0.0}
+
+
+def _context_load_cache(vault_path):
+    """Load the cache; None when missing, unreadable, or structurally invalid."""
+    try:
+        with open(context_cache_path(vault_path), "r", encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(cache, dict) or cache.get("version") != CONTEXT_CACHE_VERSION:
+        return None
+    if not isinstance(cache.get("docs"), dict) or not isinstance(cache.get("postings"), dict):
+        return None
+    if not isinstance(cache.get("chunk_count"), int):
+        return None
+    if not isinstance(cache.get("chunk_total_len"), (int, float)):
+        return None
+    for meta in cache["docs"].values():
+        if not isinstance(meta, dict) or "path" not in meta or "chunk_lens" not in meta:
+            return None
+    return cache
+
+
+def _context_save_cache(vault_path, cache):
+    """Atomic best-effort write — a torn cache never replaces a good one."""
+    path = context_cache_path(vault_path)
+    tmp = f"{path}.tmp{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cache, f, separators=(",", ":"), ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _context_index_doc(cache, vault_path, rel_path, text, mtime, size):
+    """(Re)tokenize one document into the cache; returns its Document ID."""
+    doc_id = _context_doc_id(rel_path, text)
+    if doc_id in cache["docs"]:
+        _context_remove_doc(cache, doc_id)
+    chunks = _context_chunks(text)
+    chunk_lens = []
+    for ci, chunk in enumerate(chunks):
+        terms = _context_chunk_terms(chunk)
+        chunk_lens.append(sum(terms.values()))
+        for token, weight in terms.items():
+            cache["postings"].setdefault(token, {}).setdefault(doc_id, []).append(
+                [ci, round(weight, 4)])
+    cache["docs"][doc_id] = {
+        "path": rel_path,
+        "mtime": mtime,
+        "size": size,
+        "hash": _context_hash(text),
+        "chunks": len(chunks),
+        "chunk_lens": chunk_lens,
+    }
+    cache["chunk_count"] += len(chunks)
+    cache["chunk_total_len"] += sum(chunk_lens)
+    return doc_id
+
+
+def _context_remove_doc(cache, doc_id):
+    meta = cache["docs"].pop(doc_id, None)
+    if meta is None:
+        return
+    cache["chunk_count"] = max(0, cache["chunk_count"] - meta.get("chunks", 0))
+    cache["chunk_total_len"] = max(
+        0.0, cache["chunk_total_len"] - sum(meta.get("chunk_lens", [])))
+    for token in list(cache["postings"].keys()):
+        postings = cache["postings"][token]
+        if doc_id in postings:
+            del postings[doc_id]
+            if not postings:
+                del cache["postings"][token]
+
+
+def context_cache_update(vault_path, force=False):
+    """Bring `.rvc-context-cache.json` up to date; returns the cache dict.
+
+    Incremental by design: only added/altered/deleted files are touched. A file
+    whose stat matches a vanished path is the same document moved — it repaths
+    with zero re-tokenization. A corrupt cache cold-starts transparently.
+    """
+    cache = None if force else _context_load_cache(vault_path)
+    scanned = _context_scan(vault_path)
+    if cache is None:
+        cache = _context_empty_cache()
+        by_path = {}
+        dirty = True
+    else:
+        by_path = {meta["path"]: doc_id for doc_id, meta in cache["docs"].items()}
+        dirty = False
+
+    # 1. Repath first: an added path whose stat matches a vanished doc is a move.
+    vanished = [doc_id for doc_id, meta in cache["docs"].items()
+                if meta["path"] not in scanned]
+    added = [path for path in scanned if path not in by_path]
+    for path in list(added):
+        mtime, size = scanned[path]
+        for doc_id in list(vanished):
+            meta = cache["docs"][doc_id]
+            if meta["size"] == size and abs(meta["mtime"] - mtime) < 1e-4:
+                meta["path"] = path
+                meta["mtime"], meta["size"] = mtime, size
+                by_path[path] = doc_id
+                added.remove(path)
+                vanished.remove(doc_id)
+                dirty = True
+                break
+
+    # 2. Deletions.
+    for doc_id in vanished:
+        _context_remove_doc(cache, doc_id)
+        dirty = True
+
+    # 3. Additions and modifications.
+    for rel_path, (mtime, size) in scanned.items():
+        if rel_path in added:
+            text = _context_read(vault_path, rel_path)
+            if text is None:
+                continue
+            _context_index_doc(cache, vault_path, rel_path, text, mtime, size)
+            dirty = True
+            continue
+        doc_id = by_path.get(rel_path)
+        if doc_id is None or doc_id not in cache["docs"]:
+            continue
+        meta = cache["docs"][doc_id]
+        if meta["mtime"] == mtime and meta["size"] == size:
+            continue
+        text = _context_read(vault_path, rel_path)
+        if text is None:
+            continue
+        if _context_hash(text) == meta["hash"]:
+            meta["mtime"], meta["size"] = mtime, size
+            dirty = True
+            continue
+        old_id = doc_id
+        new_id = _context_index_doc(cache, vault_path, rel_path, text, mtime, size)
+        if new_id != old_id and old_id in cache["docs"]:
+            _context_remove_doc(cache, old_id)
+        dirty = True
+
+    if dirty:
+        _context_save_cache(vault_path, cache)
+    return cache
+
+
+def context_cache_repath(vault_path, old_path, new_path):
+    """Update a document's path pointer after a move — no re-tokenization."""
+    cache = _context_load_cache(vault_path)
+    if cache is None:
+        return
+    old_rel = os.path.relpath(old_path, vault_path).replace(os.sep, "/")
+    new_rel = os.path.relpath(new_path, vault_path).replace(os.sep, "/")
+    for meta in cache["docs"].values():
+        if meta.get("path") == old_rel:
+            meta["path"] = new_rel
+            try:
+                st = os.stat(new_path)
+                meta["mtime"], meta["size"] = st.st_mtime, st.st_size
+            except OSError:
+                pass
+            _context_save_cache(vault_path, cache)
+            return
+
+
+def _context_archive_dirs(tree):
+    """Buckets whose docs are never soft suggestions (indexed, not offered)."""
+    dirs = [tree[v].rstrip("/") for v in ("evict", "supersede")
+            if tree and tree.get(v)]
+    return tuple(dirs) if dirs else ("90_ARCHIVE",)
+
+
+def _context_is_archived(rel_path, archive_dirs):
+    return any(rel_path == d or rel_path.startswith(d + "/") for d in archive_dirs)
+
+
+def _context_knowledge_prior(rel_path, tree):
+    """Prior for docs under the vault's knowledge root (root > nested)."""
+    root = (tree or {}).get("roadmap")
+    if not root:
+        return 1.0
+    root = root.rstrip("/")
+    if rel_path == root or rel_path.startswith(root + "/"):
+        rest = rel_path[len(root):].lstrip("/")
+        return CONTEXT_KNOWLEDGE_SUBDIR_BOOST if "/" in rest else CONTEXT_KNOWLEDGE_ROOT_BOOST
+    return 1.0
+
+
+def context_rank(cache, term_weights, surfaces=None, top_k=CONTEXT_DEFAULT_TOP_K,
+                 exclude_ids=(), exclude_paths=(), tree=None):
+    """Rank docs against a weighted term footprint; returns top scoring entries.
+
+    Each entry is `(doc_id, score, matched_surfaces, rel_path)`, best first.
+    A document's score is its best matching section (chunk-level BM25).
+    """
+    docs = cache.get("docs") or {}
+    postings = cache.get("postings") or {}
+    n_docs = len(docs)
+    if not n_docs or not term_weights:
+        return []
+    exclude_ids = set(exclude_ids)
+    exclude_paths = set(exclude_paths)
+    archive_dirs = _context_archive_dirs(tree)
+    chunk_total = cache.get("chunk_total_len", 0.0)
+    chunk_count = cache.get("chunk_count", 0)
+    chunk_avg = (chunk_total / chunk_count) if chunk_count else 1.0
+    if chunk_avg <= 0:
+        chunk_avg = 1.0
+
+    chunk_scores = {}
+    for token, qw in term_weights.items():
+        postings_for_term = postings.get(token)
+        if not postings_for_term:
+            continue
+        df = len(postings_for_term)
+        idf = math.log(1 + (n_docs - df + 0.5) / (df + 0.5))
+        for doc_id, entries in postings_for_term.items():
+            if doc_id in exclude_ids:
+                continue
+            meta = docs.get(doc_id)
+            if meta is None:
+                continue
+            scores = chunk_scores.setdefault(doc_id, {})
+            chunk_lens = meta.get("chunk_lens", [])
+            for ci, weight in entries:
+                clen = chunk_lens[ci] if ci < len(chunk_lens) else 1.0
+                denom = weight + CONTEXT_BM25_K1 * (
+                    1 - CONTEXT_BM25_B + CONTEXT_BM25_B * (clen / chunk_avg))
+                scores[ci] = scores.get(ci, 0.0) + (
+                    qw * idf * weight * (CONTEXT_BM25_K1 + 1) / denom)
+
+    ranked = []
+    for doc_id, scores in chunk_scores.items():
+        meta = docs[doc_id]
+        rel_path = meta["path"]
+        if rel_path in exclude_paths or _context_is_archived(rel_path, archive_dirs):
+            continue
+        best_ci = max(scores, key=lambda ci: (scores[ci], -ci))
+        score = scores[best_ci] * _context_knowledge_prior(rel_path, tree)
+        ranked.append((score, doc_id, best_ci, rel_path))
+    ranked.sort(key=lambda row: (-row[0], row[3]))
+
+    results = []
+    for score, doc_id, best_ci, rel_path in ranked[:top_k]:
+        contributions = []
+        for token, qw in term_weights.items():
+            entries = postings.get(token, {}).get(doc_id)
+            if not entries:
+                continue
+            for ci, weight in entries:
+                if ci == best_ci:
+                    contributions.append((qw * weight, token))
+                    break
+        contributions.sort(key=lambda row: (-row[0], row[1]))
+        matched = [((surfaces or {}).get(token, token))
+                   for _, token in contributions[:CONTEXT_MATCH_LIMIT]]
+        results.append((doc_id, score, matched, rel_path))
+    return results
+
+
+def _context_block_body(block):
+    form = block["form"]
+    if form == "gone":
+        return ""
+    if form == "stub":
+        return block.get("stub", "")
+    if form == "full":
+        return block["text"]
+    if form == "summary":
+        return block["summary"]
+    if form == "trunc":
+        limit = max(0, block.get("limit", 0))
+        removed = max(0, len(block["text"]) - limit)
+        return block["text"][:limit] + "\n" + CONTEXT_TRUNCATED_FMT.format(n=removed)
+    return CONTEXT_OMITTED_FMT.format(n=len(block["text"]))
+
+
+def _context_block_text(block):
+    if block["form"] == "gone":
+        return ""
+    if block["form"] == "stub":
+        return block.get("stub", "")
+    parts = [block["header"]]
+    parts.extend(block.get("meta", ()))
+    body = _context_block_body(block)
+    if body:
+        parts.append(body)
+    if block.get("footer"):
+        parts.append(block["footer"])
+    return "\n".join(parts)
+
+
+def _context_assemble(target_id, target_title, target, hard_blocks, missing,
+                      soft_blocks, budget, mode):
+    """Render the context payload, degrading lowest-priority blocks first.
+
+    Priority is target > hard refs > soft refs; within a tier the last item
+    degrades first. Forms: full -> summary -> truncated -> omitted -> stub
+    (one-line notice) -> gone.
+    """
+    if mode == "summary":
+        for block in [target] + hard_blocks:
+            block["form"] = "summary"
+    order = list(reversed(soft_blocks)) + list(reversed(hard_blocks)) + [target]
+
+    def render():
+        header = f"# RVC Context Assembler: {target_id}"
+        if target_title:
+            header += f" ({target_title})"
+        parts = [header, "", "## 1. Target Issue", _context_block_body(target)]
+        visible_hard = [b for b in hard_blocks if b["form"] != "gone"]
+        gone_hard = [b for b in hard_blocks if b["form"] == "gone"]
+        if visible_hard or gone_hard or missing:
+            parts.append("")
+            parts.append("## 2. Explicit References (Hard Signals)")
+            for block in visible_hard:
+                parts.append(_context_block_text(block))
+            for block in gone_hard:
+                parts.append(block.get("stub", CONTEXT_OMITTED_FMT.format(n=len(block["text"]))))
+            for link in missing:
+                parts.append(f"--- REFERENCE [[{link}]] NOT FOUND IN VAULT ---")
+        visible_soft = [b for b in soft_blocks if b["form"] != "gone"]
+        gone_soft = [b for b in soft_blocks if b["form"] == "gone"]
+        if visible_soft or gone_soft:
+            parts.append("")
+            parts.append("## 3. Discovered Related Context (Soft Signals — Top-K Semantic/BM25)")
+            for block in visible_soft:
+                parts.append(_context_block_text(block))
+            if gone_soft:
+                omitted = sum(len(b["text"]) for b in gone_soft)
+                parts.append(
+                    f"... [omitted {omitted} characters to satisfy budget across "
+                    f"{len(gone_soft)} related item(s)] ...")
+        return "\n".join(parts)
+
+    text = render()
+    guard = 0
+    while len(text) > budget and guard < 500:
+        guard += 1
+        block = next((b for b in order if b["form"] != "gone"), None)
+        if block is None:
+            text = text[:max(0, budget)]
+            break
+        form = block["form"]
+        if form == "full":
+            block["form"] = "summary"
+        elif form == "summary":
+            excess = len(text) - budget
+            notice = CONTEXT_TRUNCATED_FMT.format(n=len(block["text"]))
+            block["form"] = "trunc"
+            block["limit"] = max(0, len(block["summary"]) - excess - len(notice))
+        elif form == "trunc":
+            excess = len(text) - budget
+            block["limit"] = max(0, block.get("limit", 0) - excess)
+            if block["limit"] == 0:
+                block["form"] = "omit"
+        elif form == "omit":
+            # Hard/soft refs leave a one-line stub so nothing is dropped
+            # silently; the target only vanishes as the very last resort.
+            block["form"] = "stub" if block.get("stub") else "gone"
+        else:  # stub -> gone
+            block["form"] = "gone"
+        text = render()
+    return text
+
+
+def cmd_context(vault_path, item_id, top_k=CONTEXT_DEFAULT_TOP_K,
+                budget=CONTEXT_DEFAULT_BUDGET, mode="full",
+                no_semantic=False, reindex=False):
+    """Assemble target + explicit wikilinks + Top-K BM25 matches (STORY-033)."""
     file_path = find_file_by_id(vault_path, item_id)
     if not file_path:
         print(f"Error: Item {item_id} not found.")
         sys.exit(1)
 
-    with open(file_path, 'r') as f:
-        content = f.read()
+    rel_path = os.path.relpath(file_path, vault_path).replace(os.sep, "/")
+    content = _context_read(vault_path, rel_path)
+    if content is None:
+        print(f"Error: could not read {file_path}")
+        sys.exit(1)
+    target_id = _context_doc_id(rel_path, content)
+    target_title = _context_doc_title(content, rel_path)
 
-    links = re.findall(r'\[\[(.*?)\]\]', content)
-    
-    print(f"# RVC Context Assembler: {item_id}\n")
-    print(f"Found {len(links)} references. Gathering documentation...\n")
-
-    # Build the vault index once for all link lookups
+    # Hard signals: deduplicated wikilinks, resolved against one index build.
     vault_index = build_vault_index(vault_path)
-    
-    for link in links:
-        # Strip anchor and alias to get base filename
-        link_name = link.split('|')[0].split('#')[0]
-        spec_path = None
-        
-        # Exact match first
-        if link_name in vault_index:
-            spec_path = vault_index[link_name]
-        else:
-            # Prefix match
-            for filename in vault_index.keys():
-                if filename.startswith(link_name + "-"):
-                    spec_path = vault_index[filename]
-                    break
+    links, seen = [], set()
+    for raw_link in re.findall(r"\[\[(.*?)\]\]", content):
+        name = raw_link.split("|")[0].split("#")[0].strip()
+        if name and name not in seen:
+            seen.add(name)
+            links.append(raw_link)
 
-        if spec_path:
-            print(f"--- REFERENCE: [[{link}]] ---")
-            print(f"File: {os.path.relpath(spec_path, vault_path)}\n")
-            with open(spec_path, 'r') as f_spec:
-                print(f_spec.read())
-            print(f"\n--- END OF REFERENCE ---\n")
-        else:
-            print(f"--- REFERENCE [[{link}]] NOT FOUND IN VAULT ---\n")
+    hard_blocks, missing = [], []
+    hard_ids, hard_paths = set(), set()
+    for link in links:
+        name = link.split("|")[0].split("#")[0].strip()
+        spec_path = _find_in_index(vault_index, name)
+        if not spec_path:
+            missing.append(link)
+            continue
+        spec_rel = os.path.relpath(spec_path, vault_path).replace(os.sep, "/")
+        spec_text = _context_read(vault_path, spec_rel)
+        if spec_text is None:
+            missing.append(link)
+            continue
+        hard_ids.add(_context_doc_id(spec_rel, spec_text))
+        hard_paths.add(spec_rel)
+        hard_blocks.append({
+            "kind": "hard",
+            "header": f"--- REFERENCE: [[{link}]] ---\nFile: {spec_rel}",
+            "footer": "--- END OF REFERENCE ---",
+            "meta": (),
+            "text": spec_text,
+            "summary": _context_goal_summary(spec_text),
+            "stub": f"--- REFERENCE: [[{link}]] {CONTEXT_OMITTED_FMT.format(n=len(spec_text))} ---",
+            "form": "full",
+        })
+
+    soft_blocks = []
+    if not no_semantic:
+        cache = context_cache_update(vault_path, force=reindex)
+        surfaces = {}
+        terms = _context_terms(content, surfaces=surfaces)
+        tree = resolve_tree(vault_path)
+        ranked = context_rank(
+            cache, terms, surfaces=surfaces, top_k=top_k,
+            exclude_ids=hard_ids | {target_id},
+            exclude_paths=hard_paths | {rel_path}, tree=tree)
+        best_score = ranked[0][1] if ranked else 0.0
+        for doc_id, score, matched, path in ranked:
+            doc_text = _context_read(vault_path, path)
+            if doc_text is None:
+                continue
+            display = (score / best_score) if best_score else 0.0
+            soft_blocks.append({
+                "kind": "soft",
+                "header": f"--- RELATED: [[{path}]] (Relevance Score: {display:.2f}) ---",
+                "footer": "--- END OF RELATED ---",
+                "meta": ((f"Matched terms: {', '.join(matched)}",) if matched else ()),
+                "text": doc_text,
+                "summary": _context_summary(doc_text),
+                "stub": f"--- RELATED: [[{path}]] {CONTEXT_OMITTED_FMT.format(n=len(doc_text))} ---",
+                "form": "full",
+            })
+
+    target_block = {
+        "kind": "target",
+        "header": "",
+        "footer": "",
+        "meta": (),
+        "text": content,
+        "summary": _context_goal_summary(content),
+        "form": "full",
+    }
+    print(_context_assemble(target_id, target_title, target_block, hard_blocks,
+                            missing, soft_blocks, budget, mode))
+
 
 def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
     tree = resolve_tree(vault_path)
@@ -614,6 +1303,14 @@ def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
 
     label = state_label(new_file_path, vault_path)
     print(f"[RVC] Issue {issue_id} moved to {label} ({target_rel}).")
+
+    # Eager index hook (STORY-033 constraint 5): move the path pointer without
+    # re-tokenizing — identity (Document ID + content hash) is unchanged.
+    if os.path.exists(context_cache_path(vault_path)):
+        try:
+            context_cache_repath(vault_path, file_path, new_file_path)
+        except Exception:
+            pass
 
     sync_after(vault_path, [file_path, new_file_path], f"rvc: Issue {issue_id} -> {label}", skip_ci=skip_ci)
 
@@ -855,6 +1552,14 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     except TimeoutError as e:
         print(f"Error: {e}")
         sys.exit(1)
+
+    # Eager index hook (STORY-033 constraint 5): if a context cache already
+    # exists, fold the new issue in so the next `rvc context` is warm.
+    if os.path.exists(context_cache_path(vault_path)):
+        try:
+            context_cache_update(vault_path)
+        except Exception:
+            pass
 
     print(f"[RVC] Created {filename}")
     print(f"      {filepath}")
@@ -1458,7 +2163,7 @@ def cmd_help(subgroup=None):
     """Print the nested command reference (derived from COMMANDS.md).
 
     Works without a vault — pure static text, exits 0.
-    Subgroups: None (top-level), "issue", "project".
+    Subgroups: None (top-level), "issue", "project", "context".
     """
     if subgroup == "issue":
         print("rvc issue — list, transition, and create issues")
@@ -1486,6 +2191,24 @@ def cmd_help(subgroup=None):
         print()
         print("Note: viewing an issue is done with  rvc get <ID>  — the issue command")
         print("  handles listing and transitions only.")
+    elif subgroup == "context":
+        print("rvc context — assemble an issue's context (target + hard links + soft matches)")
+        print()
+        print("Usage:")
+        print("  rvc context ⟨ID⟩ [--top-k ⟨N⟩] [--budget ⟨CHARS⟩] [--mode full|summary]")
+        print("                   [--no-semantic] [--reindex]")
+        print()
+        print("Arguments:")
+        print("  <ID>           issue or note id; unpadded resolves too (STORY-32 ≡ STORY-033)")
+        print("  --top-k        semantic matches to retrieve (default: 3)")
+        print("  --budget       total output character budget (default: 40000); over-budget")
+        print("                 output drops the lowest-ranked items first, with a notice")
+        print("  --mode         full text vs frontmatter+goal+AC summary (default: full)")
+        print("  --no-semantic  resolve only explicit [[wikilinks]] (legacy behavior)")
+        print("  --reindex      force a full rebuild of .rvc-context-cache.json")
+        print()
+        print("Note: the stdlib BM25 ranker indexes all .md files; archive buckets are")
+        print("  indexed but never suggested, and the vault's knowledge dir ranks first.")
     elif subgroup == "project":
         print("rvc project — initialize a project with a vault subdirectory")
         print()
@@ -1550,9 +2273,15 @@ def cmd_help(subgroup=None):
         print("      Print the raw issue file for ⟨ID⟩.")
         print("      ⟨ID⟩         issue id (e.g. STORY-032)")
         print()
-        print("  context ⟨ID⟩")
-        print("      Assemble linked context: resolve [[wikilinks]] and print referenced files.")
-        print("      ⟨ID⟩         issue id (e.g. STORY-032)")
+        print("  context ⟨ID⟩ [--top-k ⟨N⟩] [--budget ⟨CHARS⟩] [--mode full|summary]")
+        print("                [--no-semantic] [--reindex]")
+        print("      Assemble context: target issue + explicit [[wikilinks]] + Top-K BM25 matches.")
+        print("      ⟨ID⟩         issue id (e.g. STORY-032); unpadded STORY-32 also resolves")
+        print("      --top-k      semantic matches to retrieve (default: 3)")
+        print("      --budget     total output character budget (default: 40000)")
+        print("      --mode       full text vs frontmatter+goal+AC summary (default: full)")
+        print("      --no-semantic  resolve only explicit [[wikilinks]] (legacy behavior)")
+        print("      --reindex    force a full rebuild of .rvc-context-cache.json")
         print()
         print("  list [⟨status⟩] [--dir ⟨bucket⟩]")
         print("      List issues (alias for 'rvc issue list').")
@@ -1575,7 +2304,8 @@ def cmd_help(subgroup=None):
         print("      Note: surgical repair; 'rescan' is the broader rewrite.")
         print()
         print("  rescan [--dry-run]")
-        print("      Broad normalization: fix frontmatter, add wikilinks, infer tags.")
+        print("      Broad normalization: fix frontmatter, add wikilinks, infer tags,")
+        print("      and rebuild .rvc-context-cache.json (the semantic context cache).")
         print("      --dry-run    show changes without writing")
         print("      Note: broader than 'doctor --fix' (constitution repair only).")
         print()
@@ -1601,6 +2331,16 @@ def main():
 
     context_p = subparsers.add_parser("context")
     context_p.add_argument("id")
+    context_p.add_argument("--top-k", type=int, default=CONTEXT_DEFAULT_TOP_K,
+                           help="Semantic/BM25 matches to retrieve (default: 3)")
+    context_p.add_argument("--budget", type=int, default=CONTEXT_DEFAULT_BUDGET,
+                           help="Total output character budget (default: 40000)")
+    context_p.add_argument("--mode", choices=("full", "summary"), default="full",
+                           help="full text vs frontmatter+goal+AC summary (default: full)")
+    context_p.add_argument("--no-semantic", action="store_true", dest="no_semantic",
+                           help="Resolve only explicit [[wikilinks]] (legacy behavior)")
+    context_p.add_argument("--reindex", action="store_true",
+                           help="Force a full rebuild of .rvc-context-cache.json")
 
     issue_p = subparsers.add_parser("issue")
     issue_p.add_argument("action_or_id")
@@ -1686,15 +2426,17 @@ def main():
     install_p.add_argument("--check", action="store_true",
                            help="Verify installation and exit (no changes)")
 
-    subparsers.add_parser(
+    help_p = subparsers.add_parser(
         "help",
         help="Show this nested command reference (works without a vault)")
+    help_p.add_argument("subgroup", nargs="?", default=None,
+                        help="Command group: issue, project, context (default: top level)")
 
     args = parser.parse_args()
 
     # Help needs no vault — pure static text, always exits 0 (AC4).
     if args.command == "help":
-        cmd_help()
+        cmd_help(args.subgroup)
         return
     if args.command == "issue" and args.action_or_id == "help":
         cmd_help("issue")
@@ -1722,7 +2464,8 @@ def main():
     if args.command == "get":
         cmd_get(vault_root, args.id)
     elif args.command == "context":
-        cmd_context(vault_root, args.id)
+        cmd_context(vault_root, args.id, top_k=args.top_k, budget=args.budget,
+                    mode=args.mode, no_semantic=args.no_semantic, reindex=args.reindex)
     elif args.command == "issue":
         if args.action_or_id == "list":
             cmd_issue_list(vault_root, args.action_or_status, list_dir=args.list_dir)
@@ -1760,6 +2503,10 @@ def main():
         print(out)
         if err:
             print(f"[rescan] stderr: {err}", file=sys.stderr)
+        if rc == 0 and not getattr(args, "dry_run", False):
+            # Full reconciliation of the semantic context cache (STORY-033).
+            context_cache_update(vault_root, force=True)
+            print(f"[RVC] Context cache rebuilt: {CONTEXT_CACHE_NAME}")
     elif args.command == "doctor":
         report = cmd_doctor(vault_root, fix=args.fix)
         for v in report["violations"]:

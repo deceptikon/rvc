@@ -166,7 +166,9 @@ rvc create "Critical Bug" --prefix BUG --type bug --priority Critical
 rvc create "Spike: Reranker" --epic EPIC-05-PRD-Phase-2 --body "## Context\n..."
 
 # ── Context Assembler ──
-rvc context STORY-28            # Loads issue + all [[linked]] references
+rvc context STORY-28            # Issue + [[linked]] refs + Top-K BM25 matches
+rvc context STORY-28 --no-semantic          # Legacy: explicit [[links]] only
+rvc context STORY-28 --budget 20000 --mode summary
 
 # ── Search ──
 rvc search "pgvector"           # Case-insensitive vault grep
@@ -237,7 +239,7 @@ uv run rvcd.py --sse --port 8080
 | Tool | Description |
 |------|-------------|
 | `rvc_get_issue` | Read an issue by ID |
-| `rvc_get_context` | Load issue + all linked references |
+| `rvc_get_context` | Issue + [[linked]] refs + Top-K BM25 matches (top_k, budget_chars, include_semantic) |
 | `rvc_issue_list` | List issues, optionally filtered by status |
 | `rvc_issue_start` | Transition to Active |
 | `rvc_issue_review` | Transition to Review |
@@ -292,11 +294,11 @@ Add to `~/.qwen/settings.json`:
 LLMs traverse the vault like this:
 
 ```
-1. rvc context STORY-83       ← load issue + all [[linked]] stories/epics/specs
+1. rvc context STORY-83       ← issue + [[linked]] refs + Top-K BM25 matches
 2. rvc search "chunking"      ← find relevant docs by keyword
 3. rvc issue list "Active"    ← see what's in progress
 4. MAP.md                     ← start here: full project index with cross-references
-5. rvc rescan                 ← keep the graph healthy (cron or manual)
+5. rvc rescan                 ← keep the graph + context cache healthy (cron or manual)
 ```
 
 The graph flows: **MAP.md → EPIC → STORY → linked stories/specs**. Domain tags let models filter by concern without reading every file.

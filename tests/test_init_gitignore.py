@@ -43,9 +43,18 @@ def test_write_vault_gitignore_preserves_existing_content():
     assert ".rvc-create.lock" in content
 
 
+def test_write_vault_gitignore_covers_context_cache():
+    """STORY-033 AC2: the semantic context cache is never tracked."""
+    _, vault = make_vault()
+    rvc_cli._write_vault_gitignore(vault)
+    content = open(os.path.join(vault, ".gitignore")).read()
+    assert ".rvc-context-cache.json" in content
+
+
 def test_cmd_init_provisions_vault_gitignore():
     """End-to-end: a fresh `rvc init` leaves the lock rule in the vault."""
     root = tempfile.mkdtemp(prefix="rvc-init-")
     rvc_cli.cmd_init(root, "newvault")
     content = open(os.path.join(root, ".gitignore")).read()
     assert ".rvc-create.lock" in content
+    assert ".rvc-context-cache.json" in content

@@ -90,14 +90,27 @@ def rvc_get_issue(project_path: str, issue_id: str) -> dict:
 
 
 @mcp.tool()
-def rvc_get_context(project_path: str, issue_id: str) -> dict:
-    """Get the full context for an issue, including all [[linked]] references.
+def rvc_get_context(
+    project_path: str,
+    issue_id: str,
+    top_k: int = 3,
+    budget_chars: int = 40000,
+    include_semantic: bool = True,
+) -> dict:
+    """Get assembled context for an issue: the issue itself, explicit [[wikilinks]],
+    and Top-K related documents discovered by the stdlib BM25 ranker.
 
     Args:
         project_path: Absolute path to the project / vault root.
         issue_id: Issue identifier (e.g. 'ISSUE-042' or 'STORY-003').
+        top_k: Number of semantic/related documents to retrieve (default: 3).
+        budget_chars: Maximum output character budget (default: 40000).
+        include_semantic: False resolves only explicit [[wikilinks]] (legacy behavior).
     """
-    stdout, stderr, code = _rvc(["context", issue_id], project_path)
+    cmd = ["context", issue_id, "--top-k", str(top_k), "--budget", str(budget_chars)]
+    if not include_semantic:
+        cmd.append("--no-semantic")
+    stdout, stderr, code = _rvc(cmd, project_path)
     if code != 0:
         return _err(f"rvc context {issue_id} failed (exit {code}): {stderr}", code)
     return _ok(stdout)

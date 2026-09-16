@@ -8,6 +8,31 @@ live decision; compress superseded ones to one line pointing at the resolving co
   `README_TEMPLATE`. Deep specs: `10_CONTEXT/specs/DECISION-Domain-Structuring.md` (domain
   structuring rationale) and `10_CONTEXT/specs/PROTOCOL.md`.
 
+## 2026-09-16 — opencode — `rvc context` is semantic BM25, identity-keyed, budgeted (STORY-033)
+- **Stdlib BM25 over chunks, not wikilinks.** The legacy resolver only read explicit links and dumped
+  referenced files whole (60–90K chars). `rvc context` now extracts the target's weighted term
+  footprint (title/id 3x, tags 2.5x, headings 2x, body 1x; kebab ids split; numerals zero-stripped so
+  `STORY-33` ≡ `STORY-033`) and ranks every vault doc with BM25 (k1=1.5, **b=1.0**). b=1.0 is full
+  length normalization: a long debate transcript must not outrank a short reference by accumulating
+  weak matches (hand-labeled benchmark recall@5: 77% at b=0.75 vs 92% at b=1.0). A doc's score is its
+  best section, so soft refs are excerpt-grade without an LLM. No pip, no model, no network.
+- **Identity is the Document ID; the path is a pointer.** `.rvc-context-cache.json` is keyed by
+  `id: STORY-033` / `ROUTING`, never by folder. `rvc issue <ID> <action>` repaths on `git mv`
+  (mtime+size match, zero re-tokenization); `rvc create` folds the new file in when a cache exists;
+  `rvc rescan` force-rebuilds. Cache is vault-local, git-ignored, atomically written; missing or
+  corrupt caches cold-start transparently. Cold build ~290 ms / 60 docs; warm update ~18 ms.
+- **Ranking policy (owner-approved).** Archive buckets (`tree.evict`/`tree.supersede`) are indexed —
+  hard links may point there — but never offered as soft suggestions. Docs under the vault's
+  knowledge root (`tree.roadmap`, e.g. `10_CONTEXT`) carry a prior (root ×1.5, nested ×1.2): `rvc
+  context` exists to surface the constitution, DECISIONS, GOTCHAS and specs, not debate transcripts.
+  Measured recall@5: 69% without the prior, 92% (12/13) with it, enforced by
+  `tests/test_context_benchmark.py`. The remaining miss (`STORY-028` → `STORY-029`) is a semantic
+  label with no lexical bridge — the documented ceiling of the stdlib tier.
+- **Budget.** `--budget` (default 40000 chars). Degradation order is target > hard refs > soft refs;
+  each block goes full → summary (frontmatter+title+headings+first 500 chars) → truncated notice →
+  omitted notice → gone, and dropped soft refs leave a section-level omission notice. `--mode
+  summary` prints frontmatter+goal+ACs; `--no-semantic` keeps the legacy wikilink-only behavior.
+
 ## 2026-09-16 — opencode — the vault is RVC's; Conductor's work moved out (20 issues archived)
 - **Three projects had been filed as one vault.** EPIC-001 is RVC tooling; EPIC-002/003 are the
   **Conductor** pipeline (`conductor/pipeline.py`) — and Conductor already owns them, both in

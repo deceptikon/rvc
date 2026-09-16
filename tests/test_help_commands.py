@@ -131,6 +131,7 @@ def test_help_needs_no_vault_and_exits_zero():
         (["rvc", "help"], None),
         (["rvc", "issue", "help"], "issue"),
         (["rvc", "project", "help"], "project"),
+        (["rvc", "help", "context"], "context"),
     ):
         old_argv = sys.argv
         try:
@@ -141,3 +142,16 @@ def test_help_needs_no_vault_and_exits_zero():
         finally:
             sys.argv = old_argv
         assert "rvc" in buf.getvalue(), f"{argv} printed no help"
+
+
+def test_context_help_documents_semantic_flags():
+    """STORY-033 AC10: `rvc help` and `rvc help context` match COMMANDS.md."""
+    out = help_output("context")
+    assert "--top-k" in out and "default: 3" in out
+    assert "--budget" in out and "default: 40000" in out
+    assert "--mode" in out and "default: full" in out
+    assert "--no-semantic" in out
+    assert "--reindex" in out
+    top = help_output()
+    assert "Assemble context" in top
+    assert "--top-k" in top and "--budget" in top

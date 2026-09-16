@@ -15,3 +15,4 @@ Thumbs.db
 # Lock files
 .~lock.*#
 .rvc-create.lock
+.rvc-context-cache.json

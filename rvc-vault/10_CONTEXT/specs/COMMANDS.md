@@ -87,10 +87,20 @@ Print the raw issue file for `⟨ID⟩`.
 ### `rvc context`
 
 ```
-rvc context ⟨ID⟩
+rvc context ⟨ID⟩ [--top-k ⟨N⟩] [--budget ⟨CHARS⟩] [--mode full|summary]
+                 [--no-semantic] [--reindex]
 ```
-Assemble linked context: read the issue, resolve every `[[wikilink]]` in its body
-against the vault index, and print each referenced file in full.
+Assemble context for an issue: the target issue itself, its explicit `[[wikilinks]]`
+(deduplicated), and Top-K related documents discovered by a zero-dependency BM25
+ranker over the vault (cache: `.rvc-context-cache.json`, vault-local and
+git-ignored; identity is the Document ID, so folder transitions repath without
+re-tokenization). `--top-k` selects how many related documents to retrieve
+(default `3`); `--budget` caps the total output at `⟨CHARS⟩` characters
+(default `40000`), degrading the lowest-ranked blocks first with a truncation
+notice; `--mode summary` prints frontmatter + goal + acceptance criteria instead
+of full text; `--no-semantic` keeps legacy behavior (explicit wikilinks only);
+`--reindex` forces a full cache rebuild. Unpadded ids resolve everywhere
+(`STORY-33` ≡ `STORY-033`).
 
 ### `rvc list`
 
@@ -135,7 +145,8 @@ bucket: `status:` fields in live buckets are violations, off-vocabulary
 rvc rescan [--dry-run]
 ```
 Fix frontmatter, add wikilinks, infer tags across the vault (delegates to
-`vault-restructure.py`). On block-bucket trees the normalizer strips `status:`
+`vault-restructure.py`) and rebuild `.rvc-context-cache.json` (the semantic
+context cache). On block-bucket trees the normalizer strips `status:`
 instead of normalizing it. `--dry-run` shows changes without writing.
 
 ### `rvc git-commit-all`

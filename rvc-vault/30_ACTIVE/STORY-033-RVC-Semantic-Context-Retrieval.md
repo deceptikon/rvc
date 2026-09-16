@@ -120,35 +120,35 @@ Evaluate vector & lexical approaches on a 100–1000 document technical markdown
 
 ## Acceptance Criteria
 
-- [ ] **AC 1: Zero-Dependency Stdlib Retrieval Engine**
+- [x] **AC 1: Zero-Dependency Stdlib Retrieval Engine**
   - Implement a pure Python standard library BM25/TF-IDF relevance engine in `rvc-cli.py`.
   - Tokenization accounts for kebab-case identifiers (`STORY-013`), code snippets, frontmatter tags, and Markdown headings (headings get 2x weight boost; title/id gets 3x boost).
-- [ ] **AC 2: Incremental Index Caching, Drift Resilience & Git Hygiene**
+- [x] **AC 2: Incremental Index Caching, Drift Resilience & Git Hygiene**
   - Cache inverted index & document metadata in `.rvc-context-cache.json` at vault root, keyed by immutable Document ID (`STORY-XXX` or spec name) rather than volatile folder path.
   - On folder transitions (`git mv`), location pointers update with zero re-tokenization.
   - Cache respects `st_mtime` and content hashes; re-indexes only modified files.
   - Add `.rvc-context-cache.json` to `VAULT_GITIGNORE_LINES` in `rvc-cli.py` (`_write_vault_gitignore`) and root `.gitignore`, ensuring the cache is never tracked.
-- [ ] **AC 3: Hybrid Retrieval & Context Assembly**
+- [x] **AC 3: Hybrid Retrieval & Context Assembly**
   - `rvc context <ID>` outputs:
     1. The target issue itself.
     2. Explicit `[[wikilinks]]` references (deduplicated).
     3. Top-K related documents discovered by relevance score (excluding target and already-linked files).
   - Flags supported: `--top-k <N>` (default 3), `--budget <chars>` (default 40000), `--no-semantic`, `--reindex`.
-- [ ] **AC 4: Token / Character Budget Trimming**
+- [x] **AC 4: Token / Character Budget Trimming**
   - Respect character budget; if output exceeds budget, truncate low-priority / soft references first with clear truncation notices (`... [truncated N characters to satisfy budget] ...`).
-- [ ] **AC 5: ID Normalization for Context & Issue Commands**
+- [x] **AC 5: ID Normalization for Context & Issue Commands**
   - `find_file_by_id` and `rvc context` support unpadded numbers (e.g. `STORY-33` matches `STORY-033`).
-- [ ] **AC 6: MCP Daemon Integration (`rvcd.py`)**
+- [x] **AC 6: MCP Daemon Integration (`rvcd.py`)**
   - `rvc_get_context` accepts `top_k`, `budget_chars`, and `include_semantic` parameters and returns the structured context payload.
-- [ ] **AC 7: Architectural Decision Recorded**
+- [x] **AC 7: Architectural Decision Recorded**
   - Record chosen search architecture, caching strategy, and dependency policy in `10_CONTEXT/DECISIONS.md`.
-- [ ] **AC 8: Zero Hard Dependency Verification**
+- [x] **AC 8: Zero Hard Dependency Verification**
   - Standalone `rvc-cli.py` runs without any pip-installed dependencies. Local test suite passes with stdlib only.
-- [ ] **AC 9: Existing Vaults & Explicit Reindexing Support**
+- [x] **AC 9: Existing Vaults & Explicit Reindexing Support**
   - Automatic cold-start index build for pre-existing vaults (both `newvault` and `legacy` layouts) upon first run.
   - Reindex flag: `rvc context <ID> --reindex` forces full rebuild.
   - Automatic recovery: if `.rvc-context-cache.json` is missing or corrupted, transparently re-indexes without failure.
-- [ ] **AC 10: Help System & Specification Synchronization**
+- [x] **AC 10: Help System & Specification Synchronization**
   - Update `10_CONTEXT/specs/COMMANDS.md` with the new `rvc context` signature, flags, and defaults.
   - Update `rvc help` and `rvc help context` text in `rvc-cli.py` to match `COMMANDS.md` verbatim per the STORY-032 help contract.
 
@@ -185,6 +185,28 @@ Evaluate recall@5 on a hand-labeled benchmark suite of 5 actual issues from `rvc
 - `.rvc-context-cache.json` covered in `VAULT_GITIGNORE_LINES` and verified in `tests/test_init_gitignore.py`.
 - Unit tests added to `tests/test_context_semantic.py` verifying BM25 scoring, cache freshness, budgeting, and ID alias lookup (`STORY-33` -> `STORY-033`).
 - Local test runner `python3 tests/run_tests.py` passes 100% cleanly without external dependencies.
+
+## Implementation notes (landed 2026-09-16)
+
+- **`--mode` implemented although AC3 omitted it** (it is in the Proposed CLI section):
+  `summary` prints frontmatter + goal/problem/acceptance sections, falling back to
+  frontmatter + headings + first 500 chars.
+- **Owner-approved ranking policy.** Soft candidates exclude `tree.evict` / `tree.supersede`
+  buckets (indexed — hard links may point there — but never suggested), and docs under
+  `tree.roadmap` (`10_CONTEXT`) carry a prior (root ×1.5, nested ×1.2). Without the prior the
+  stdlib baseline measured 69% recall@5 on this benchmark; with it 92%. The arena corpus stays
+  in soft candidates: it is historical context, not archive.
+- **BM25 parameters:** k1=1.5, b=1.0 (full length normalization — a long transcript must not
+  outrank a short reference by accumulating weak matches; b=0.75 measured 77%). A document's
+  score is its best section, so soft refs are excerpt-grade.
+- **Eager hooks only mutate an existing cache.** `create` / transitions never mint a partial
+  cache that would claim to be a full index; the first `rvc context` or `rvc rescan` builds it.
+- **Benchmark enforcement:** `tests/test_context_benchmark.py` runs a scratch copy of the live
+  vault (never the vault itself), skips ground-truth docs that no longer exist, and fails if
+  fewer than 4 targets / 8 expectations survive or recall@5 < 80%.
+- **`--mode full` semantics:** soft references print full document text within budget; the
+  budget degrades target > hard refs > soft refs through summary → truncation → omission, and
+  dropped soft refs always leave at least a section-level omission notice.
 
 ---
 
