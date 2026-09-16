@@ -8,6 +8,18 @@ live decision; compress superseded ones to one line pointing at the resolving co
   `README_TEMPLATE`. Deep specs: `10_CONTEXT/specs/DECISION-Domain-Structuring.md` (domain
   structuring rationale) and `10_CONTEXT/specs/PROTOCOL.md`.
 
+## 2026-09-16 — opencode — the vault is RVC's; Conductor's work moved out (20 issues archived)
+- **Three projects had been filed as one vault.** EPIC-001 is RVC tooling; EPIC-002/003 are the
+  **Conductor** pipeline (`conductor/pipeline.py`) — and Conductor already owns them, both in
+  `conductor/10_Issues/` and in `conductor/conductor/stories/` (story-015…023 are byte-for-byte the
+  same stories that sat here). The RVC vault now holds only RVC's subject matter.
+- **Routing:** 4 → `90_ARCHIVE/done` (STORY-002 scaffolder already shipped as `rvc init`; STORY-008
+  shell=True, STORY-009 PlanReviser, STORY-010 tests landed in Conductor). 16 → `90_ARCHIVE/superseded`
+  (EPIC-002/003 + their non-landed children 011–012, 015–023; plus the dropped vision 004–006).
+- **Why not delete:** the Conductor epic is live work, just not *this* vault's. A superseded copy
+  keeps the provenance and the argument; deleting it would make a future reader re-derive why it
+  left. `20_NEXT` is now 8 issues that all describe one project: *make `rvc` a better vault tool.*
+
 ## 2026-09-16 — opencode — `create` is lock-safe: flock serializes ID minting (STORY-013 AC4/AC5)
 - **The race:** `_next_id()` is a high-water-mark scan followed by `max+1`, and file creation
   happened outside any lock. Two concurrent `rvc create` calls both scanned, both minted
