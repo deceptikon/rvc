@@ -14,3 +14,4 @@ Thumbs.db
 
 # Lock files
 .~lock.*#
+.rvc-create.lock

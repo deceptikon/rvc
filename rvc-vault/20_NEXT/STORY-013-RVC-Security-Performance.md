@@ -22,8 +22,13 @@ aliases:
 - [ ] Refactor `run_cmd()` to accept list commands; remove `shell=True` from all git operations.
 - [ ] Add a simple JSON index (`.rvc-index.json`) in the vault root mapping `ID → filepath`. Update on every write operation (`create`, `issue start/review/done`).
 - [ ] `find_file_by_id()` reads from index first, falls back to `os.walk` with a warning if index is stale.
-- [ ] `_next_id()` uses filesystem locking (`fcntl` on Linux, `msvcrt` on Windows) or atomic writes to prevent duplicate IDs.
-- [ ] Add tests for index consistency and ID generation under concurrency.
+- [x] `_next_id()` uses filesystem locking (`fcntl` on Linux, `msvcrt` on Windows) or atomic writes to prevent duplicate IDs.
+      Landed for POSIX: `vault_create_lock()` holds an exclusive `flock` on `.rvc-create.lock`
+      (vault root, git-ignored) across the mint+write critical section. Windows/`msvcrt` path not
+      implemented — deployment is Linux-only today.
+- [x] Add tests for ID generation under concurrency — `tests/test_create_concurrency.py` spawns 8
+      processes and asserts unique, sequential IDs. Index-consistency tests remain coupled to
+      `.rvc-index.json` (AC2).
 
 ## Test Case
 ```bash

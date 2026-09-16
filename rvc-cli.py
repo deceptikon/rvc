@@ -3,9 +3,12 @@ import os
 import sys
 import re
 import json
+import time
+import fcntl
 import argparse
 import datetime as dt
 import subprocess
+from contextlib import contextmanager
 
 def run_cmd(cmd, cwd=None):
     res = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
@@ -611,6 +614,45 @@ def _sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name).strip().replace(" ", "-")
 
 
+LOCK_FILE_NAME = ".rvc-create.lock"
+LOCK_TIMEOUT = 30  # seconds; refuse to wedge a create behind a dead peer
+
+
+@contextmanager
+def vault_create_lock(vault_path):
+    """Cross-process advisory lock serializing ID minting + file creation.
+
+    Held via fcntl.flock (BSD flock, released automatically when the fd closes,
+    so a crashed process cannot wedge the vault — no stale-lock cleanup needed).
+    The lock file itself is never deleted; it lives beside .rvc-root and is
+    deliberately NOT committed to git (see .gitignore).
+
+    With a timeout: if another create holds the lock longer than LOCK_TIMEOUT
+    seconds, we assume it was interrupted or hung and fail loudly rather than
+    block forever — surfacing the contention instead of wedging the CLI.
+    """
+    lock_path = os.path.join(vault_path, LOCK_FILE_NAME)
+    deadline = time.monotonic() + LOCK_TIMEOUT
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
+                           "process — aborting to avoid a duplicate-ID race.")
+                    raise TimeoutError(msg)
+                time.sleep(0.05)
+        os.truncate(fd, 0)
+        os.write(fd, f"pid={os.getpid()}\n".encode())
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 def _next_id(vault_path, prefix="STORY"):
     """Find the next sequential ID for a given prefix (e.g., STORY-30).
 
@@ -668,55 +710,63 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     if not os.path.exists(target_dir):
         os.makedirs(target_dir, exist_ok=True)
 
-    issue_id = _next_id(vault_path, prefix)
-    safe_title = _sanitize_filename(title)
-    filename = f"{issue_id}-{safe_title}.md"
-    filepath = os.path.join(target_dir, filename)
+    # Critical section: ID mint + file creation must be atomic across processes.
+    # Two concurrent creates scanning for the max ID would otherwise both mint
+    # STORY-XXX+1 and one silently overwrites the other's file.
+    try:
+        with vault_create_lock(vault_path):
+            issue_id = _next_id(vault_path, prefix)
+            safe_title = _sanitize_filename(title)
+            filename = f"{issue_id}-{safe_title}.md"
+            filepath = os.path.join(target_dir, filename)
 
-    if os.path.exists(filepath):
-        print(f"Error: File already exists: {filepath}")
+            if os.path.exists(filepath):
+                print(f"Error: File already exists: {filepath}")
+                sys.exit(1)
+
+            # Build YAML frontmatter (no status — folder = state)
+            import datetime
+            today = datetime.date.today().isoformat()
+            lines = [
+                "---",
+                f"id: {issue_id}",
+                f"title: {title}",
+                f"type: {issue_type}",
+                f"priority: {priority}",
+            ]
+            if epic:
+                lines.append(f"epic: [[{epic}]]")
+            lines.append(f"started: {today}")
+            if extra_frontmatter:
+                # Mint-time guard (STORY-029): on a block-bucket tree a `status:` field
+                # is a constitutional violation — folder owns state. Refuse to mint it.
+                if "block" in tree:
+                    for k in extra_frontmatter:
+                        if k.strip().lower() == "status":
+                            print("Error: refusing to mint a `status:` field — this tree declares a `block` bucket,")
+                            print("       and the folder owns state. Drop `status:` from extra_frontmatter.")
+                            sys.exit(1)
+                for k, v in extra_frontmatter.items():
+                    lines.append(f"{k}: {v}")
+            lines.append("---")
+            lines.append("")
+            lines.append(f"# {issue_id}: {title}")
+            lines.append("")
+            if body:
+                lines.append(body.replace("\\n", "\n"))
+            else:
+                lines.append("## Context")
+                lines.append("")
+                lines.append("## Acceptance Criteria")
+                lines.append("- [ ] ")
+                lines.append("")
+                lines.append("## Test Case Requirements")
+
+            with open(filepath, "w") as f:
+                f.write("\n".join(lines) + "\n")
+    except TimeoutError as e:
+        print(f"Error: {e}")
         sys.exit(1)
-
-    # Build YAML frontmatter (no status — folder = state)
-    import datetime
-    today = datetime.date.today().isoformat()
-    lines = [
-        "---",
-        f"id: {issue_id}",
-        f"title: {title}",
-        f"type: {issue_type}",
-        f"priority: {priority}",
-    ]
-    if epic:
-        lines.append(f"epic: [[{epic}]]")
-    lines.append(f"started: {today}")
-    if extra_frontmatter:
-        # Mint-time guard (STORY-029): on a block-bucket tree a `status:` field
-        # is a constitutional violation — folder owns state. Refuse to mint it.
-        if "block" in tree:
-            for k in extra_frontmatter:
-                if k.strip().lower() == "status":
-                    print("Error: refusing to mint a `status:` field — this tree declares a `block` bucket,")
-                    print("       and the folder owns state. Drop `status:` from extra_frontmatter.")
-                    sys.exit(1)
-        for k, v in extra_frontmatter.items():
-            lines.append(f"{k}: {v}")
-    lines.append("---")
-    lines.append("")
-    lines.append(f"# {issue_id}: {title}")
-    lines.append("")
-    if body:
-        lines.append(body.replace("\\n", "\n"))
-    else:
-        lines.append("## Context")
-        lines.append("")
-        lines.append("## Acceptance Criteria")
-        lines.append("- [ ] ")
-        lines.append("")
-        lines.append("## Test Case Requirements")
-
-    with open(filepath, "w") as f:
-        f.write("\n".join(lines) + "\n")
 
     print(f"[RVC] Created {filename}")
     print(f"      {filepath}")

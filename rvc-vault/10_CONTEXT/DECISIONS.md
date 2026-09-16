@@ -8,6 +8,19 @@ live decision; compress superseded ones to one line pointing at the resolving co
   `README_TEMPLATE`. Deep specs: `10_CONTEXT/specs/DECISION-Domain-Structuring.md` (domain
   structuring rationale) and `10_CONTEXT/specs/PROTOCOL.md`.
 
+## 2026-09-16 — opencode — `create` is lock-safe: flock serializes ID minting (STORY-013 AC4/AC5)
+- **The race:** `_next_id()` is a high-water-mark scan followed by `max+1`, and file creation
+  happened outside any lock. Two concurrent `rvc create` calls both scanned, both minted
+  `STORY-XXX+1`, and one silently overwrote the other's file — a lost issue, no error.
+- **Choice: `fcntl.flock` on `.rvc-create.lock`, not a `.rvc-root` flag.** A boolean "locked" line
+  in `.rvc-root` is not atomic across processes (check-then-set races, and a crash leaves it stuck
+  set forever). `flock` is kernel-arbitrated and auto-released when the fd closes, so a killed
+  process cannot wedge the vault — no stale-lock cleanup. The lock covers mint+write only; git's
+  own index lock handles the subsequent commit. A 30s timeout fails loudly on a wedged peer
+  instead of blocking forever. Lock file is vault-root-local and git-ignored.
+- **Test pins the contract:** `tests/test_create_concurrency.py` runs 8 real OS processes; with the
+  lock they mint exactly `STORY-01..08`. Without it the same harness produces duplicates/clobbers.
+
 ## 2026-09-16 — qwen — local zero-dependency test suite; create/plate fixes (STORY-028, STORY-031)
 - **Test suite as an independent tool:** RVC now ships `tests/` with a stdlib-only runner
   (`python3 tests/run_tests.py`, no pytest/network/conductor). Scratch vaults live under
