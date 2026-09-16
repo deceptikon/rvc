@@ -1,7 +1,6 @@
 ---
 id: EPIC-002
 type: epic
-status: To Do
 priority: P1
 assignee: "@ai-dev"
 epic:

@@ -1,7 +1,6 @@
 ---
 id: STORY-011
 type: story
-status: To Do
 priority: P1
 assignee: "@ai-dev"
 epic: "[[EPIC-002-Conductor-v0.2-Hardening]]"

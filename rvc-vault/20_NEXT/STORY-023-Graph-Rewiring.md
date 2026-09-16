@@ -1,8 +1,7 @@
 ---
 id: STORY-023
 type: story
-status: To Do
-priority: High
+priority: P1
 started: 2026-07-03
 domain: workflow_meta
 domain_tags: ["pipeline", "langgraph", "architecture", "planning"]

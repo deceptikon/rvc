@@ -1,7 +1,6 @@
 ---
 id: EPIC-001
 type: epic
-status: To Do
 priority: P0
 assignee: "@ai-dev"
 created: 2026-04-23

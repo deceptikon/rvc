@@ -1,7 +1,6 @@
 ---
 id: STORY-004
 type: story
-status: To Do
 priority: P2
 assignee: "@human"
 epic: "[[EPIC-001-RVC-Protocol]]"

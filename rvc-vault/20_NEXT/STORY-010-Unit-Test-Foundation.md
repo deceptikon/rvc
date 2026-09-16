@@ -1,8 +1,7 @@
 ---
 id: STORY-010
 type: story
-status: To Do
-priority: P0.0.0
+priority: P0
 assignee: "@ai-dev"
 epic: "[[EPIC-002-Conductor-v0.2-Hardening]]"
 created: 2026-06-28
