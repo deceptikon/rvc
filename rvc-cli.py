@@ -612,8 +612,14 @@ def _sanitize_filename(name):
 
 
 def _next_id(vault_path, prefix="STORY"):
-    """Find the next sequential ID for a given prefix (e.g., STORY-30)."""
+    """Find the next sequential ID for a given prefix (e.g., STORY-30).
+
+    Padding is derived from the width of the vault's existing high-water mark,
+    so a 3-digit vault (STORY-010) keeps minting 3-digit ids (STORY-011) and a
+    fresh vault starts at STORY-01. Mixed-width vaults keep the widest form.
+    """
     max_num = 0
+    width = 2
     tree = resolve_tree(vault_path)
     for d in tree_dirs(tree):
         root = os.path.join(vault_path, d)
@@ -623,10 +629,13 @@ def _next_id(vault_path, prefix="STORY"):
             for f in files:
                 m = re.match(rf'^{re.escape(prefix)}-(\d+)', f)
                 if m:
-                    max_num = max(max_num, int(m.group(1)))
-    if max_num == 0:
-        return f"{prefix}-01"
-    width = max(2, len(str(max_num + 1)))
+                    digits = m.group(1)
+                    num = int(digits)
+                    if num > max_num:
+                        max_num = num
+                        width = len(digits)
+                    elif num == max_num:
+                        width = max(width, len(digits))
     return f"{prefix}-{str(max_num + 1).zfill(width)}"
 
 
@@ -673,6 +682,8 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     today = datetime.date.today().isoformat()
     lines = [
         "---",
+        f"id: {issue_id}",
+        f"title: {title}",
         f"type: {issue_type}",
         f"priority: {priority}",
     ]
@@ -1100,8 +1111,11 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None):
             lanes["active"].append(surface)
         elif rel.startswith((watched["next"] or "?") + "/") and surface["is_issue"]:
             lanes["next"].append(surface)
-        elif in_decide and not is_deliberation and not surface["is_issue"]:
-            lanes["waiting"].append(surface)  # §5.2 R10 registered exception
+        elif in_decide and not is_deliberation:
+            # Blocked decisions (issues) and proposals both await a ruling — the
+            # owner's clock, not the vault's (stories were dropped here before
+            # STORY-031; ADLAI's DQL "Awaiting a ruling" lists all of 40_DECIDE).
+            lanes["waiting"].append(surface)
             waiting_paths.add(rel)
         elif rel.startswith((watched["deferred"] or "?") + "/") and surface["is_issue"]:
             lanes["waiting"].append(surface)
