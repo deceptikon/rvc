@@ -16,3 +16,4 @@ Thumbs.db
 .~lock.*#
 .rvc-create.lock
 .rvc-context-cache.json
+.rvc-context-cache.sqlite*

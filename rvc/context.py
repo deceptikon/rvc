@@ -6,11 +6,12 @@ import re
 import json
 import math
 import hashlib
+import sqlite3
 
 from rvc.core import resolve_tree, tree_dirs, find_file_by_id, build_vault_index, _find_in_index
 from rvc.plate import plate_frontmatter
 
-CONTEXT_CACHE_NAME = ".rvc-context-cache.json"
+CONTEXT_CACHE_NAME = ".rvc-context-cache.sqlite"
 CONTEXT_CACHE_VERSION = 1
 CONTEXT_DEFAULT_TOP_K = 3
 CONTEXT_DEFAULT_BUDGET = 12000
@@ -351,37 +352,115 @@ def _context_empty_cache():
 
 
 def _context_load_cache(vault_path):
-    """Load the cache; None when missing, unreadable, or structurally invalid."""
+    """Load the cache from SQLite; None when missing, unreadable, or invalid."""
+    path = context_cache_path(vault_path)
+    if not os.path.isfile(path):
+        return None
+    conn = None
     try:
-        with open(context_cache_path(vault_path), "r", encoding="utf-8") as f:
-            cache = json.load(f)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(cache, dict) or cache.get("version") != CONTEXT_CACHE_VERSION:
-        return None
-    if not isinstance(cache.get("docs"), dict) or not isinstance(cache.get("postings"), dict):
-        return None
-    if not isinstance(cache.get("chunk_count"), int):
-        return None
-    if not isinstance(cache.get("chunk_total_len"), (int, float)):
-        return None
-    for meta in cache["docs"].values():
-        if not isinstance(meta, dict) or "path" not in meta or "chunk_lens" not in meta:
+        conn = sqlite3.connect(path, timeout=5.0)
+        cur = conn.cursor()
+        cur.execute("SELECT key, val FROM metadata")
+        meta_rows = dict(cur.fetchall())
+        if not meta_rows or int(meta_rows.get("version", 0)) != CONTEXT_CACHE_VERSION:
             return None
-    return cache
+
+        chunk_count = int(meta_rows.get("chunk_count", 0))
+        chunk_total_len = float(meta_rows.get("chunk_total_len", 0.0))
+
+        cur.execute("SELECT doc_key, doc_id, path, mtime, size, hash, chunks, chunk_lens FROM docs")
+        docs = {}
+        for row in cur.fetchall():
+            doc_key, doc_id, p, mtime, size, h, chunks, chunk_lens_str = row
+            docs[doc_key] = {
+                "id": doc_id,
+                "path": p,
+                "mtime": mtime,
+                "size": size,
+                "hash": h,
+                "chunks": chunks,
+                "chunk_lens": json.loads(chunk_lens_str) if chunk_lens_str else [],
+            }
+
+        cur.execute("SELECT token, doc_key, chunk_idx, weight FROM postings")
+        postings = {}
+        for token, doc_key, ci, weight in cur.fetchall():
+            postings.setdefault(token, {}).setdefault(doc_key, []).append([ci, weight])
+
+        return {
+            "version": CONTEXT_CACHE_VERSION,
+            "docs": docs,
+            "postings": postings,
+            "chunk_count": chunk_count,
+            "chunk_total_len": chunk_total_len,
+        }
+    except Exception:
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _context_save_cache(vault_path, cache):
-    """Atomic best-effort write — a torn cache never replaces a good one."""
+    """Atomic write of the SQLite context cache."""
     path = context_cache_path(vault_path)
     tmp = f"{path}.tmp{os.getpid()}"
+    conn = None
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(cache, f, separators=(",", ":"), ensure_ascii=False)
+        conn = sqlite3.connect(tmp, timeout=5.0)
+        cur = conn.cursor()
+        cur.execute("PRAGMA synchronous = NORMAL")
+        cur.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, val TEXT)")
+        cur.execute("CREATE TABLE docs (doc_key TEXT PRIMARY KEY, doc_id TEXT, path TEXT, mtime REAL, size INTEGER, hash TEXT, chunks INTEGER, chunk_lens TEXT)")
+        cur.execute("CREATE TABLE postings (token TEXT, doc_key TEXT, chunk_idx INTEGER, weight REAL, PRIMARY KEY (token, doc_key, chunk_idx))")
+
+        cur.execute("INSERT INTO metadata VALUES ('version', ?)", (str(CONTEXT_CACHE_VERSION),))
+        cur.execute("INSERT INTO metadata VALUES ('chunk_count', ?)", (str(cache.get("chunk_count", 0)),))
+        cur.execute("INSERT INTO metadata VALUES ('chunk_total_len', ?)", (str(cache.get("chunk_total_len", 0.0)),))
+
+        doc_rows = [
+            (
+                doc_key,
+                d.get("id"),
+                d.get("path"),
+                d.get("mtime"),
+                d.get("size"),
+                d.get("hash"),
+                d.get("chunks"),
+                json.dumps(d.get("chunk_lens", [])),
+            )
+            for doc_key, d in cache.get("docs", {}).items()
+        ]
+        cur.executemany("INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?)", doc_rows)
+
+        posting_rows = [
+            (token, doc_key, ci, weight)
+            for token, doc_map in cache.get("postings", {}).items()
+            for doc_key, entries in doc_map.items()
+            for ci, weight in entries
+        ]
+        cur.executemany("INSERT INTO postings VALUES (?, ?, ?, ?)", posting_rows)
+
+        cur.execute("CREATE INDEX idx_postings_token ON postings(token)")
+        cur.execute("CREATE INDEX idx_docs_path ON docs(path)")
+
+        conn.commit()
+        conn.close()
+        conn = None
+
         os.replace(tmp, path)
-    except OSError:
+    except Exception:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
         try:
-            os.remove(tmp)
+            if os.path.exists(tmp):
+                os.remove(tmp)
         except OSError:
             pass
 

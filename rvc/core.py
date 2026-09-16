@@ -280,6 +280,9 @@ def _write_project_readme(project_root, project_name, vault_rel, tree_preset):
 VAULT_GITIGNORE_LINES = (
     ".rvc-create.lock",
     ".rvc-context-cache.json",
+    ".rvc-context-cache.sqlite",
+    ".rvc-context-cache.sqlite-wal",
+    ".rvc-context-cache.sqlite-shm",
     "**/.obsidian/workspace.json",
     ".~lock.*#",
 )
