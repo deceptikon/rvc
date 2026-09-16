@@ -1316,6 +1316,143 @@ def cmd_doctor(vault_path, fix=False):
     return report
 
 
+def cmd_help(subgroup=None):
+    """Print the nested command reference (derived from COMMANDS.md).
+
+    Works without a vault — pure static text, exits 0.
+    Subgroups: None (top-level), "issue", "project".
+    """
+    if subgroup == "issue":
+        print("rvc issue — list, transition, and create issues")
+        print()
+        print("Usage:")
+        print("  rvc issue list [⟨status|bucket⟩] [--dir ⟨bucket⟩]")
+        print("  rvc issue ⟨ID⟩ ⟨action⟩ [--skip-ci]")
+        print()
+        print("Actions (valid set comes from the vault's tree in .rvc-root):")
+        print("  triage        move to triage/next bucket")
+        print("  start         move to active bucket")
+        print("  block         move to blocked/decide bucket")
+        print("  defer         move to deferred/parked bucket")
+        print("  review        move to review bucket")
+        print("  done          move to done bucket")
+        print("  evict         move to archive/done")
+        print("  supersede     move to archive/superseded")
+        print("  create        create a new issue via the tree verb")
+        print()
+        print("Arguments:")
+        print("  list          list issues; optional positional filters by status alias or bucket")
+        print("                --dir <bucket>    list a specific configured bucket (e.g. --dir 30_ACTIVE)")
+        print("  <ID> <action> transition the issue through the vault's tree (git mv + commit)")
+        print("  --skip-ci     disable [skip ci] in commit message (default: enabled)")
+        print()
+        print("Note: viewing an issue is done with  rvc get <ID>  — the issue command")
+        print("  handles listing and transitions only.")
+    elif subgroup == "project":
+        print("rvc project — initialize a project with a vault subdirectory")
+        print()
+        print("Usage:")
+        print("  rvc project init [⟨dir⟩] [--vault-name ⟨name⟩] [--tree legacy|newvault]")
+        print("  rvc project info [⟨dir⟩]")
+        print()
+        print("Arguments:")
+        print("  init           create a project with a vault subdirectory (not flat)")
+        print("    <dir>            target directory (default: current)")
+        print("    --vault-name     vault directory name (default: vault)")
+        print("    --tree           bucket layout preset: legacy | newvault (default: legacy)")
+        print("  info           print vault info and ROADMAP.md contents if present")
+        print("    <dir>            project directory (default: current)")
+        print()
+        print("Note: 'rvc init' creates a flat vault directly; 'rvc project init' wraps it")
+        print("  in a <vault-name>/ subdirectory. Use project init for multi-repo projects.")
+    else:
+        print("rvc — folder-as-state issue tracker & context engine")
+        print()
+        print("Usage:")
+        print("  rvc [options] <command> [args...]")
+        print()
+        print("Options:")
+        print("  --path <path>    project or vault path to operate on (default: .)")
+        print()
+        print("Commands:")
+        print()
+        print("  init [⟨dir⟩] [--tree legacy|newvault]")
+        print("      Initialize a new flat vault (no vault/ subdirectory). Works without a vault.")
+        print("      ⟨dir⟩        target directory (default: .)")
+        print("      --tree       bucket layout preset (default: legacy)")
+        print()
+        print("  project")
+        print("      Initialize a project with a vault subdirectory; or print vault info.")
+        print("      Subcommands: init, info — use 'rvc project help' for details.")
+        print()
+        print("  install [--dir ⟨dir⟩] [--force] [--check]")
+        print("      Install this script as 'rvc' on PATH (symlink). Works without a vault.")
+        print("      --dir        install directory (default: ~/.local/bin)")
+        print("      --force      overwrite an unrelated existing file at the target")
+        print("      --check      verify installation and exit without changes")
+        print()
+        print("  create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
+        print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--skip-ci]")
+        print("      Create a new issue: mints the next ID and lands in the create bucket.")
+        print("      ⟨title⟩      issue title")
+        print("      --prefix     ID prefix (default: STORY)")
+        print("      --type       issue type (default: story)")
+        print("      --priority   priority (default: Medium; newvault trees sort P0-P3)")
+        print("      --body       initial issue body text")
+        print("      --dir        destination bucket (default: this vault's create/triage bucket)")
+        print("      --epic       parent epic name (e.g. EPIC-05)")
+        print("      --skip-ci    disable [skip ci] in the commit message (default: enabled)")
+        print()
+        print("  issue")
+        print("      Subcommands: list; ⟨ID⟩ ⟨action⟩ transitions — use 'rvc issue help'.")
+        print("      Viewing an issue is done with 'rvc get ⟨ID⟩'.")
+        print()
+        print("  get ⟨ID⟩")
+        print("      Print the raw issue file for ⟨ID⟩.")
+        print("      ⟨ID⟩         issue id (e.g. STORY-032)")
+        print()
+        print("  context ⟨ID⟩")
+        print("      Assemble linked context: resolve [[wikilinks]] and print referenced files.")
+        print("      ⟨ID⟩         issue id (e.g. STORY-032)")
+        print()
+        print("  list [⟨status⟩] [--dir ⟨bucket⟩]")
+        print("      List issues (alias for 'rvc issue list').")
+        print("      ⟨status⟩     filter by status alias or bucket (optional)")
+        print("      --dir        list a specific configured bucket")
+        print()
+        print("  search ⟨query⟩")
+        print("      Case-insensitive grep over every .md file in the vault.")
+        print("      ⟨query⟩      search text")
+        print()
+        print("  plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
+        print("      Render the plate: lanes computed from folders, priorities and open asks.")
+        print("      --as         canonicalize this handle for the owed-turn lane")
+        print("      --format     output format (default: text)")
+        print("      --stale-days overdue threshold in days (default: 7)")
+        print()
+        print("  doctor [--fix]")
+        print("      Audit the vault against its constitution (status:, priority vocabulary).")
+        print("      --fix        strip status: and fold priorities in place")
+        print("      Note: surgical repair; 'rescan' is the broader rewrite.")
+        print()
+        print("  rescan [--dry-run]")
+        print("      Broad normalization: fix frontmatter, add wikilinks, infer tags.")
+        print("      --dry-run    show changes without writing")
+        print("      Note: broader than 'doctor --fix' (constitution repair only).")
+        print()
+        print("  git-commit-all ⟨message⟩ [--dry-run] [--no-push] [--push]")
+        print("      Commit across all dirty submodules plus the parent repo (safe incremental).")
+        print("      --dry-run    show the plan without making changes")
+        print("      --no-push    commit but do not push")
+        print("      --push       commit and push (opt-in)")
+        print()
+        print("Commands that work without a vault: install, init, project init, help.")
+        print()
+        print("For command details, use 'rvc <command> help' or 'rvc <command> --help'.")
+        print("Full reference: 10_CONTEXT/specs/COMMANDS.md (source of truth).")
+
+
 def main():
     parser = argparse.ArgumentParser(description="RVC CLI - Vault Context Interface")
     parser.add_argument("--path", default=".", help="Path to project or vault")
@@ -1394,7 +1531,7 @@ def main():
                         help="Vault tree preset (default: legacy)")
 
     project_p = subparsers.add_parser("project")
-    project_p.add_argument("action", choices=["init", "info"])
+    project_p.add_argument("action", choices=["init", "info", "help"])
     project_p.add_argument("target_path", nargs="?")
     project_p.add_argument("--vault-name", default="vault",
                            help="Vault directory name (default: vault)")
@@ -1411,7 +1548,22 @@ def main():
     install_p.add_argument("--check", action="store_true",
                            help="Verify installation and exit (no changes)")
 
+    subparsers.add_parser(
+        "help",
+        help="Show this nested command reference (works without a vault)")
+
     args = parser.parse_args()
+
+    # Help needs no vault — pure static text, always exits 0 (AC4).
+    if args.command == "help":
+        cmd_help()
+        return
+    if args.command == "issue" and args.action_or_id == "help":
+        cmd_help("issue")
+        return
+    if args.command == "project" and args.action == "help":
+        cmd_help("project")
+        return
 
     if args.command == "install":
         sys.exit(cmd_install(args.dir, force=args.force, check=args.check))
