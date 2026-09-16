@@ -22,6 +22,7 @@ CLI_PATH = REPO_ROOT / "rvc-cli.py"
 # a real vault).
 os.environ.setdefault("TMPDIR", "/tmp/opencode")
 tempfile.tempdir = "/tmp/opencode"
+os.makedirs("/tmp/opencode", exist_ok=True)
 
 
 def _load_cli():

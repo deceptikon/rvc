@@ -90,3 +90,34 @@ def test_deferred_issue_still_waits():
     payload = plate_json(vault, today=TODAY)
     names = [row["name"] for row in payload["lanes"]["waiting"]]
     assert "STORY-099-Parked.md" in names
+
+
+def test_plate_recent_activity_git_log():
+    """Recent git activity renders in both JSON and text mode, and respects log_count."""
+    import subprocess
+    _, vault = make_vault()
+    # Initialize a git repo inside the scratch vault to test commit tracking
+    subprocess.run(["git", "init"], cwd=vault, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "dev@example.com"], cwd=vault, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test Dev"], cwd=vault, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=vault, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "chore: setup test vault"], cwd=vault, check=True, capture_output=True)
+
+    # 1. JSON mode contains recent_activity
+    payload = plate_json(vault, today=TODAY)
+    assert "recent_activity" in payload
+    assert len(payload["recent_activity"]) == 1
+    assert payload["recent_activity"][0]["subject"] == "chore: setup test vault"
+    assert payload["recent_activity"][0]["author"] == "Test Dev"
+
+    # 2. Text mode renders the section
+    _, out = capture_stdout(rvc_cli.cmd_plate, vault, fmt="text", today=TODAY)
+    assert "RECENT ACTIVITY" in out
+    assert "chore: setup test vault" in out
+    assert "Test Dev" in out
+
+    # 3. Disabling log via log_count=0 omits the section
+    _, out_no_log = capture_stdout(rvc_cli.cmd_plate, vault, fmt="text", today=TODAY, log_count=0)
+    assert "RECENT ACTIVITY" not in out_no_log
+    payload_no_log = plate_json(vault, today=TODAY, log_count=0)
+    assert payload_no_log["recent_activity"] == []

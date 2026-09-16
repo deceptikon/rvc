@@ -148,8 +148,9 @@ def test_context_help_documents_semantic_flags():
     """STORY-033 AC10: `rvc help` and `rvc help context` match COMMANDS.md."""
     out = help_output("context")
     assert "--top-k" in out and "default: 3" in out
-    assert "--budget" in out and "default: 40000" in out
-    assert "--mode" in out and "default: full" in out
+    assert "--budget" in out and "default: 12000" in out
+    assert "--mode" in out and "default: summary" in out
+    assert "--deep" in out
     assert "--no-semantic" in out
     assert "--reindex" in out
     top = help_output()

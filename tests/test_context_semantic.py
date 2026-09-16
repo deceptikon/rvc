@@ -221,12 +221,17 @@ def test_context_assembles_target_hard_and_soft():
     _, out = capture_stdout(rvc_cli.cmd_context, vault, "STORY-001")
     assert "# RVC Context Assembler: STORY-001 (Target)" in out
     assert "## 1. Target Issue" in out
-    assert "--- REFERENCE: [[HARD]] ---" in out
+    assert "[[HARD]]" in out
     assert "linked reference text" in out
     assert "## 3. Discovered Related Context" in out
     assert "10_CONTEXT/SOFT.md" in out
     assert "Matched terms:" in out
     assert "Relevance Score:" in out
+
+    # Full mode preserves legacy ceremonial blocks
+    _, full_out = capture_stdout(rvc_cli.cmd_context, vault, "STORY-001", mode="full")
+    assert "--- REFERENCE: [[HARD]] ---" in full_out
+    assert "--- RELATED: [[10_CONTEXT/SOFT.md]]" in full_out
 
 
 def test_hard_links_deduplicated_and_excluded_from_soft():
@@ -236,8 +241,10 @@ def test_hard_links_deduplicated_and_excluded_from_soft():
                 {"id": "STORY-001", "title": "Target"},
                 "## Context\n\nflock\n\n[[HARD]] [[HARD]] [[HARD#anchor|alias]]\n")
     _, out = capture_stdout(rvc_cli.cmd_context, vault, "STORY-001")
-    assert out.count("--- REFERENCE: [[HARD]] ---") == 1
-    assert "RELATED: [[10_CONTEXT/HARD.md]]" not in out
+    assert out.count("- [[HARD]]") == 1
+    assert "10_CONTEXT/HARD.md" not in out
+    _, full_out = capture_stdout(rvc_cli.cmd_context, vault, "STORY-001", mode="full")
+    assert full_out.count("--- REFERENCE: [[HARD]] ---") == 1
 
 
 def test_no_semantic_keeps_legacy_hard_links_only():
@@ -328,3 +335,44 @@ def test_mcp_get_context_signature_exposes_semantic_controls():
         assert name in args, f"rvc_get_context missing '{name}'"
     defaults = [ast.literal_eval(d) for d in fn.args.defaults]
     assert defaults == [3, 40000, True], defaults
+
+
+# ── AC11: duplicate doc IDs and excerpt-grade context ─────────────────────────
+
+def test_duplicate_doc_ids_coexist_without_cache_churn():
+    """Archive/superseded duplicate IDs coexist cleanly without constant reindexing."""
+    _, vault = make_vault()
+    write_doc(vault, "90_ARCHIVE/done/STORY-028-Done.md",
+              "---\nid: STORY-028\ntitle: Done Version\n---\n\nflock alpha\n")
+    write_doc(vault, "90_ARCHIVE/superseded/STORY-028-Superseded.md",
+              "---\nid: STORY-028\ntitle: Superseded Version\n---\n\nflock beta\n")
+    cache = rvc_cli.context_cache_update(vault, force=True)
+    assert len(cache["docs"]) == 2, "both documents must be indexed"
+    assert "STORY-028" in cache["docs"]
+    assert any(k.startswith("STORY-028::") for k in cache["docs"]), "duplicate ID disambiguated"
+
+    with index_spy() as spy:
+        rvc_cli.context_cache_update(vault)
+    assert spy.calls == [], "clean run must not re-tokenize duplicate IDs"
+
+
+def test_soft_matches_yield_section_excerpts_not_full_documents():
+    """Summary mode excerpts the matching section chunk rather than dumping full doc."""
+    _, vault = make_vault()
+    long_doc = (
+        "# Spec\n\n"
+        "## Unrelated Section\n\n"
+        + "noise " * 200 + "\n\n"
+        "## Crucial Section\n\n"
+        "Here is the flock secret answer that solves everything.\n\n"
+        "## Another Section\n\n"
+        + "more noise " * 200
+    )
+    write_doc(vault, "10_CONTEXT/BIGSPEC.md", long_doc)
+    write_issue(vault, "20_NEXT/STORY-001-Target.md",
+                {"id": "STORY-001", "title": "Target"},
+                "## Problem\n\nNeed the flock secret answer.\n")
+    _, out = capture_stdout(rvc_cli.cmd_context, vault, "STORY-001")
+    assert "Crucial Section" in out
+    assert "flock secret answer" in out
+    assert "noise noise noise" not in out

@@ -87,20 +87,21 @@ Print the raw issue file for `⟨ID⟩`.
 ### `rvc context`
 
 ```
-rvc context ⟨ID⟩ [--top-k ⟨N⟩] [--budget ⟨CHARS⟩] [--mode full|summary]
-                 [--no-semantic] [--reindex]
+rvc context ⟨ID⟩ [--top-k ⟨N⟩] [--budget ⟨CHARS⟩] [--mode summary|full]
+                 [--deep] [--no-semantic] [--reindex]
 ```
 Assemble context for an issue: the target issue itself, its explicit `[[wikilinks]]`
 (deduplicated), and Top-K related documents discovered by a zero-dependency BM25
 ranker over the vault (cache: `.rvc-context-cache.json`, vault-local and
 git-ignored; identity is the Document ID, so folder transitions repath without
 re-tokenization). `--top-k` selects how many related documents to retrieve
-(default `3`); `--budget` caps the total output at `⟨CHARS⟩` characters
-(default `40000`), degrading the lowest-ranked blocks first with a truncation
-notice; `--mode summary` prints frontmatter + goal + acceptance criteria instead
-of full text; `--no-semantic` keeps legacy behavior (explicit wikilinks only);
-`--reindex` forces a full cache rebuild. Unpadded ids resolve everywhere
-(`STORY-33` ≡ `STORY-033`).
+(default `3`); `--budget` caps total output at `⟨CHARS⟩` characters
+(default `12000`); `--mode summary` (default) formats a scannable, signal-dense
+assembly (target problem + AC, hard links with concise summaries, soft signals with
+section excerpts around matched terms); `--mode full` outputs complete documents;
+`--deep` is an alias for `--mode full --budget 40000`; `--no-semantic` keeps
+legacy behavior (explicit wikilinks only); `--reindex` forces a full cache rebuild.
+Unpadded ids resolve everywhere (`STORY-33` ≡ `STORY-033`).
 
 ### `rvc list`
 
@@ -121,12 +122,15 @@ Case-insensitive grep over every `.md` file in the vault; prints
 
 ```
 rvc plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]
+          [--log-count ⟨N⟩] [--no-log]
 ```
 Render the plate: lanes computed from folders, priorities and open asks
-(`next`, `active`, `waiting`, `overdue`, `inbox`, `owes_turn`, `owner`).
+(`next`, `active`, `waiting`, `overdue`, `inbox`, `owes_turn`, `owner`), plus
+recent vault git activity.
 `--as` canonicalizes a handle for the owed-turn lane; without it the render is
-identity-free. `--format json` emits a machine-readable payload. `--stale-days` is
-the overdue threshold (default 7).
+identity-free. `--format json` emits a machine-readable payload including `recent_activity`.
+`--stale-days` is the overdue threshold (default 7). `--log-count` controls the number of
+recent vault commits to show (default 5; `--no-log` disables).
 
 ### `rvc doctor`
 
@@ -148,6 +152,14 @@ Fix frontmatter, add wikilinks, infer tags across the vault (delegates to
 `vault-restructure.py`) and rebuild `.rvc-context-cache.json` (the semantic
 context cache). On block-bucket trees the normalizer strips `status:`
 instead of normalizing it. `--dry-run` shows changes without writing.
+
+### `rvc reindex`
+
+```
+rvc reindex
+```
+Force a full rebuild of `.rvc-context-cache.json` (the semantic context cache)
+without altering any document files or frontmatter.
 
 ### `rvc git-commit-all`
 
