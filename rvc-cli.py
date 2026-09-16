@@ -4,11 +4,23 @@ import sys
 import re
 import json
 import time
-import fcntl
 import argparse
 import datetime as dt
 import subprocess
 from contextlib import contextmanager
+
+# Cross-process file locking. fcntl is POSIX-only; msvcrt is Windows-only.
+# Imported defensively so the CLI loads on both platforms instead of dying at
+# import time on the missing module (STORY-013 AC4: "fcntl on Linux, msvcrt on
+# Windows"). If neither exists, vault_create_lock degrades to a no-op.
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - Windows
+    _fcntl = None
+try:
+    import msvcrt as _msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    _msvcrt = None
 
 def run_cmd(cmd, cwd=None):
     res = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
@@ -280,6 +292,42 @@ def _write_project_readme(project_root, project_name, vault_rel, tree_preset):
         f.write(body)
     print(f"[RVC] Wrote project README: {readme}")
 
+
+# Files every RVC/Obsidian vault should keep out of git. The lock file must be
+# ignored in EVERY vault, not just this repo's root — a stray untracked
+# `.rvc-create.lock` is noise in any host project. `rvc init` / `rvc project init`
+# append these to the vault's own .gitignore (idempotent, non-clobbering).
+VAULT_GITIGNORE_LINES = (
+    ".rvc-create.lock",
+    "**/.obsidian/workspace.json",
+    ".~lock.*#",
+)
+
+
+def _write_vault_gitignore(vault_dir):
+    """Ensure <vault>/.gitignore covers RVC/Obsidian volatile files.
+
+    Idempotent: appends only the lines not already present, preserves any
+    existing content. Never fails the init if the file is unwritable.
+    """
+    path = os.path.join(vault_dir, ".gitignore")
+    existing = []
+    if os.path.exists(path):
+        with open(path, "r", errors="replace") as f:
+            existing = [line.strip() for line in f]
+    missing = [line for line in VAULT_GITIGNORE_LINES if line not in existing]
+    if not missing:
+        print(f"[RVC] Vault .gitignore already covers volatile files: {path}")
+        return
+    with open(path, "a") as f:
+        if existing and existing[-1] != "":
+            f.write("\n")
+        f.write("# RVC + Obsidian volatile state\n")
+        for line in missing:
+            f.write(line + "\n")
+    print(f"[RVC] Wrote vault .gitignore: {path}")
+
+
 def cmd_init(target_path=".", tree="legacy"):
     """Scaffold a new RVC vault directly in target_path (flat — no vault/ subdir)."""
     vault_dir = os.path.abspath(target_path)
@@ -303,6 +351,8 @@ def cmd_init(target_path=".", tree="legacy"):
         if newvault:
             for verb, d in sorted(t.items()):
                 f.write(f"tree.{verb}={d}\n")
+
+    _write_vault_gitignore(vault_dir)
 
     reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
     routing_path = os.path.join(vault_dir, reglament)
@@ -342,6 +392,8 @@ def cmd_project_init(target_path=".", vault_name="vault", tree="legacy"):
         if newvault:
             for verb, d in sorted(t.items()):
                 f.write(f"tree.{verb}={d}\n")
+
+    _write_vault_gitignore(vault_dir)
 
     reglament = "10_CONTEXT/ROUTING.md" if newvault else "00_Project/REGLAMENT.md"
     routing_path = os.path.join(vault_dir, reglament)
@@ -618,14 +670,50 @@ LOCK_FILE_NAME = ".rvc-create.lock"
 LOCK_TIMEOUT = 30  # seconds; refuse to wedge a create behind a dead peer
 
 
+def _lock_acquire(fd):
+    """Non-blocking exclusive lock on an open fd. True if acquired.
+
+    POSIX -> fcntl.flock; Windows -> msvcrt.locking (1 byte at offset 0).
+    With neither primitive available, returns True so `create` still works
+    (degraded: no cross-process protection, but never a hard failure).
+    """
+    if _fcntl is not None:
+        try:
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+    if _msvcrt is not None:
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            _msvcrt.locking(fd, _msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    return True
+
+
+def _lock_release(fd):
+    """Release the lock taken by _lock_acquire (best-effort; never raises)."""
+    try:
+        if _fcntl is not None:
+            _fcntl.flock(fd, _fcntl.LOCK_UN)
+        elif _msvcrt is not None:
+            os.lseek(fd, 0, os.SEEK_SET)
+            _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+
+
 @contextmanager
 def vault_create_lock(vault_path):
     """Cross-process advisory lock serializing ID minting + file creation.
 
-    Held via fcntl.flock (BSD flock, released automatically when the fd closes,
-    so a crashed process cannot wedge the vault — no stale-lock cleanup needed).
-    The lock file itself is never deleted; it lives beside .rvc-root and is
-    deliberately NOT committed to git (see .gitignore).
+    Held via fcntl.flock on POSIX (msvcrt on Windows), released automatically
+    when the fd closes, so a crashed process cannot wedge the vault — no
+    stale-lock cleanup needed. The lock file itself is never deleted; it lives
+    beside .rvc-root and is git-ignored in every vault (`rvc init` writes the
+    rule; see VAULT_GITIGNORE_LINES).
 
     With a timeout: if another create holds the lock longer than LOCK_TIMEOUT
     seconds, we assume it was interrupted or hung and fail loudly rather than
@@ -635,21 +723,21 @@ def vault_create_lock(vault_path):
     deadline = time.monotonic() + LOCK_TIMEOUT
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
-                           "process — aborting to avoid a duplicate-ID race.")
-                    raise TimeoutError(msg)
-                time.sleep(0.05)
-        os.truncate(fd, 0)
-        os.write(fd, f"pid={os.getpid()}\n".encode())
+        while not _lock_acquire(fd):
+            if time.monotonic() >= deadline:
+                msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
+                       "process — aborting to avoid a duplicate-ID race.")
+                raise TimeoutError(msg)
+            time.sleep(0.05)
+        # Best-effort pid stamp for debugging; never let it break the lock.
+        try:
+            os.truncate(fd, 0)
+            os.write(fd, f"pid={os.getpid()}\n".encode())
+        except OSError:
+            pass
         yield
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _lock_release(fd)
         os.close(fd)
 
 

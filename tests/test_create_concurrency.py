@@ -69,3 +69,20 @@ def test_lock_file_is_created_beside_rvc_root():
     assert os.path.isfile(lock)
     # Not a dir, not a symlink — and regular create leaves it unlocked.
     os.remove(lock)
+
+
+def test_lock_degrades_gracefully_without_primitives():
+    """With neither fcntl nor msvcrt (portability fallback), create still works.
+
+    Pins the cross-platform contract from STORY-013 AC4: the CLI must load and
+    mint on a platform with no locking module, never hard-fail.
+    """
+    _, vault = make_vault()
+    saved = (rvc_cli._fcntl, rvc_cli._msvcrt)
+    rvc_cli._fcntl = None
+    rvc_cli._msvcrt = None
+    try:
+        path = rvc_cli.cmd_create_issue(vault, "No-primitive Probe", priority="P1")
+    finally:
+        rvc_cli._fcntl, rvc_cli._msvcrt = saved
+    assert os.path.basename(path).startswith("STORY-01-")
