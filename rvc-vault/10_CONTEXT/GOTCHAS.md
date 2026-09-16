@@ -14,3 +14,15 @@
 - **Minted ids before STORY-028 had no `id:`/`title:`.** Existing CLI-minted tickets (e.g. ADLAI
   `STORY-107/108/109`) still lack the `id:` field — re-mint or `rescan` to normalize; the filename is
   no longer the only identity carrier for new issues.
+- **`rvc doctor` rewrites only the frontmatter block, never the body.** `_doctor_rewrite` operates on
+  the lines between the opening and closing `---`; a file without a frontmatter block passes through
+  untouched. It is deliberately surgical — a full `rescan` (wikilinks + tag inference) is a separate,
+  broader operation that can churn files far beyond constitution hygiene.
+- **`vault-restructure.py`'s normalizer now depends on the vault's tree shape.** On a tree that
+  declares `tree.block=` it *deletes* `status:` instead of normalizing it; stray tiers (`P0.0.0`)
+  fold to their base tier. Legacy trees (no block) keep the old normalize-status behavior — running
+  `rescan` on a legacy vault will not strip `status:`.
+- **A `status:` merged in via `extra_frontmatter` on a block-bucket tree now hard-fails.** Callers
+  (MCP layer, integrations) that minted one field-line greps passed since folder-owns-state was only
+  enforced in the frontmatter builder. The create path refuses with exit 1 — catch `SystemExit` in
+  callers that talk to `cmd_create_issue` directly.

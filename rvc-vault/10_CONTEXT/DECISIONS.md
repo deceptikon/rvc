@@ -21,6 +21,19 @@ live decision; compress superseded ones to one line pointing at the resolving co
   ADLAI's DQL "Awaiting a ruling". They join `waiting_paths`, so a blocked decision is waiting on the
   owner's clock — never mislabeled overdue.
 
+## 2026-09-16 — qwen — constitution guard: `rvc doctor` + mint refusal (STORY-029)
+- **The guard is the fix, not the sweep:** stripping `status:` from 26 files fixes today's drift;
+  `rvc doctor` (audit + `--fix`), the create-time refusal, and the rescan normalizer stop it from
+  regrowing. Two independent vaults growing identical rot proved the failure was in tooling, not
+  team discipline — so the tool owns the law. ADLAI's `LEGACY_PRIORITY_TO_P` translation proves the
+  tool can detect; it just only did so at creation, never on audit.
+- **`doctor` is scoped to trees that declare a `block` bucket:** folder-is-state law only exists on
+  newvault trees. Legacy trees (no `block`) keep their status/priority conventions untouched — the
+  guard refuses nothing there. Archive buckets (`90_ARCHIVE/*`) keep what they were filed with.
+- **Priority folding is tier-preserving:** strays fold to their declared base tier (`High`→`P1`,
+  `P0.0.0`→`P0`) rather than being flattened to a default — the author's intent survives, the
+  queue stays P0-P3 sortable.
+
 ## 2026-09-13 — big-pickle — push is opt-in; `create` honors the create bucket
 - **Opt-in push:** `cmd_issue_action` was silently running `git push` after every transition and
   synced `origin/main` during a doc-only commit (unintended). Now `_push_enabled()` gates it —
