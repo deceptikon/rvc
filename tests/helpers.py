@@ -31,7 +31,15 @@ def _load_cli():
     return mod
 
 
+def _load_restructure():
+    spec = importlib.util.spec_from_file_location("vault_restructure", REPO_ROOT / "vault-restructure.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 rvc_cli = _load_cli()
+vault_restructure = _load_restructure()
 
 NEWVAULT_TREE = {
     "create": "00_INBOX",

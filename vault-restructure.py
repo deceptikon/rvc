@@ -253,6 +253,21 @@ def wrap_plain_ids(content_body, known_ids, self_id=None):
     return result, additions
 
 
+def _vault_declares_block(vault_root):
+    """True when the vault's .rvc-root declares a `block` bucket (newvault tree).
+
+    Such trees are folder-is-state: a `status:` frontmatter field must not exist.
+    """
+    root_file = os.path.join(vault_root, ".rvc-root")
+    if not os.path.exists(root_file):
+        return False
+    try:
+        with open(root_file, errors="replace") as f:
+            return any(line.strip().startswith("tree.block=") for line in f)
+    except OSError:
+        return False
+
+
 def normalize_frontmatter(fm, filepath, filename, vault_root):
     """Ensure consistent frontmatter fields. Returns (fm, changed)."""
     changed = False
@@ -294,7 +309,11 @@ def normalize_frontmatter(fm, filepath, filename, vault_root):
                 fm["title"] = title
                 changed = True
 
-    # Normalize status values
+    # Normalize status values — but on a block-bucket tree the field must not
+    # exist at all (folder = state). Strip it instead of normalizing it.
+    if "status" in fm and _vault_declares_block(vault_root):
+        del fm["status"]
+        changed = True
     status_map = {
         "to do": "To Do",
         "to_do": "To Do",
@@ -338,6 +357,11 @@ def normalize_frontmatter(fm, filepath, filename, vault_root):
         elif p.lower() in ("critical", "high", "medium", "low"):
             mapping = {"critical": "P0", "high": "P1", "medium": "P2", "low": "P3"}
             fm["priority"] = mapping[p.lower()]
+            changed = True
+        elif re.match(r'^P\d+(\.\d+)*$', p, re.IGNORECASE):
+            # Stray tier like P0.0.0 — fold to the declared base tier (P0)
+            base = re.match(r'^P(\d+)', p, re.IGNORECASE)
+            fm["priority"] = f"P{base.group(1)}"
             changed = True
 
     # Normalize epic field — ensure it's in [[wikilink]] format
