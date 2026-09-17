@@ -34,3 +34,14 @@
 - **The context cache is keyed by Document ID, and colliding ids last-win.** Two files carrying the
   same `id:` frontmatter (or the same `PREFIX-NN` filename shape) collapse into one document in
   `.rvc-context-cache.json`; `rvc doctor` does not audit identity collisions (yet).
+- **`rvc issue <ID> triage` gate: non-issue types are refused, exit 1.** A deposit whose frontmatter
+  `type:` is not story/epic/bug/task (`proposal`, `feedback`, …) cannot be triaged into the queue —
+  the CLI warns `manual placement required` and does not move it. Place those by hand (or `block` /
+  `supersede` them, which still route any file).
+- **`sync_after` commits via a throwaway index; operator-staged work survives untouched.** RVC
+  commits only the moved/created paths (STORY-034 AC2). If you stage work *before* running an `rvc`
+  transition, it stays staged and never crosses into the RVC commit — verify with
+  `git diff --cached` afterwards.
+- **`rvc plate --write` regenerates PLATE.md from the tree.** The file at `tree.roadmap/PLATE.md`
+  (`10_CONTEXT/PLATE.md` on newvault) is a rendering, not a record — refresh it after transitions;
+  hand-editing it is the one thing the constitution forbids.

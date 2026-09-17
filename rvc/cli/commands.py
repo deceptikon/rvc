@@ -154,11 +154,15 @@ def cmd_help(subgroup=None):
         print()
         print("Usage:")
         print("  rvc plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
+        print("           [--log-count ⟨N⟩] [--no-log] [--write]")
         print()
         print("Arguments:")
         print("  --as         canonicalize this handle for the owed-turn lane (e.g. --as D)")
         print("  --format     output format (default: text)")
         print("  --stale-days overdue threshold in days (default: 7)")
+        print("  --log-count  number of recent vault commits to show (default: 5)")
+        print("  --no-log     disable the recent activity git log")
+        print("  --write      also persist the text rendering to the tree's PLATE.md")
     elif subgroup == "doctor":
         print("rvc doctor — audit the vault against its constitution")
         print()
@@ -298,10 +302,14 @@ def cmd_help(subgroup=None):
         print("      ⟨query⟩      search text")
         print()
         print("  plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
+        print("        [--log-count ⟨N⟩] [--no-log] [--write]")
         print("      Render the plate: lanes computed from folders, priorities and open asks.")
         print("      --as         canonicalize this handle for the owed-turn lane")
         print("      --format     output format (default: text)")
         print("      --stale-days overdue threshold in days (default: 7)")
+        print("      --log-count  number of recent vault commits to show (default: 5)")
+        print("      --no-log     disable the recent activity git log")
+        print("      --write      also persist the text rendering to the tree's PLATE.md")
         print()
         print("  doctor [--fix]")
         print("      Audit the vault against its constitution (status:, priority vocabulary).")
@@ -382,7 +390,8 @@ def handle_list(args):
 def handle_plate(args):
     vault = _require_vault(args.path)
     log_count = 0 if getattr(args, "no_log", False) else getattr(args, "log_count", 5)
-    cmd_plate(vault, as_alias=args.as_alias, fmt=args.format, stale_days=args.stale_days, log_count=log_count)
+    cmd_plate(vault, as_alias=args.as_alias, fmt=args.format, stale_days=args.stale_days,
+              log_count=log_count, write=getattr(args, "write", False))
 
 
 def handle_create(args):
@@ -552,6 +561,8 @@ def build_parser():
                          help="Number of recent vault commits to show (default: 5, 0 to disable)")
     plate_p.add_argument("--no-log", action="store_true",
                          help="Disable recent activity git log")
+    plate_p.add_argument("--write", action="store_true",
+                         help="Also write the text rendering to the tree's PLATE.md")
     plate_p.set_defaults(handler=handle_plate)
 
     create_p = subparsers.add_parser("create", add_help=False)

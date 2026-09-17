@@ -68,15 +68,24 @@ def main():
         return 1
 
     total_pass, total_fail, all_failures = 0, 0, []
+    total_skip = 0
     for name, path in modules:
-        passed, failed, failures = run_file(path)
+        try:
+            passed, failed, failures = run_file(path)
+        except ImportError as exc:
+            # e.g. a pytest-only module when the stdlib runner is used — skip
+            # with the reason instead of aborting the whole suite.
+            print(f"[skip] {path.name}: cannot import ({exc})")
+            total_skip += 1
+            continue
         total_pass += passed
         total_fail += failed
         all_failures.extend(failures)
         status = "ok" if failed == 0 else "FAIL"
         print(f"[{status}] {path.name}: {passed} passed, {failed} failed")
 
-    print(f"\nTotal: {total_pass} passed, {total_fail} failed")
+    print(f"\nTotal: {total_pass} passed, {total_fail} failed"
+          + (f", {total_skip} skipped" if total_skip else ""))
     for fname, test, tb in all_failures:
         print(f"\n--- {fname}::{test} ---")
         print(tb.rstrip())

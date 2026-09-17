@@ -2,8 +2,17 @@
 
 import os
 import sys
+import subprocess
 import configparser
 from rvc.core import run_cmd, find_git_root
+
+
+def _git(git_root, *args, env=None):
+    """Run one git command as argv list (never through a shell — no quoting bugs)."""
+    return subprocess.run(
+        ["git", "-C", git_root, *args],
+        capture_output=True, text=True, env=env,
+    )
 
 
 def sync_before(vault_path):
@@ -31,24 +40,61 @@ def _push_enabled(vault_path):
 
 def sync_after(vault_path, file_paths, msg, skip_ci=True):
     git_root = find_git_root(vault_path)
-    if git_root:
-        print("[RVC] Committing state...")
+    if not git_root:
+        return
+    print("[RVC] Committing state...")
+
+    # STORY-034 AC2: never commit an index this command did not stage, and scope
+    # the commit to the moved/created paths. Build a temporary index seeded from
+    # HEAD, stage only our paths there, and commit with that index — an operator's
+    # own pre-staged work is never swept into this message.
+    git_dir = _git(git_root, "rev-parse", "--git-dir").stdout.strip()
+    if not os.path.isabs(git_dir):
+        git_dir = os.path.join(git_root, git_dir)
+    tmp_index = os.path.join(git_dir, f"rvc-commit-index-{os.getpid()}.tmp")
+    base_env = dict(os.environ, GIT_INDEX_FILE=tmp_index)
+    try:
+        res = _git(git_root, "read-tree", "HEAD", env=base_env)
+        if res.returncode != 0:
+            print(f"[RVC] Warning: could not seed commit index:\n{res.stderr.strip()}")
+            return
         for fp in file_paths:
-            run_cmd(f"git add '{fp}'", cwd=git_root)
-        if skip_ci:
-            if "[skip ci]" not in msg:
-                commit_msg = f"{msg} [skip ci]"
+            rel = os.path.relpath(os.path.abspath(fp), git_root)
+            if os.path.isfile(fp):
+                res = _git(git_root, "add", "--", rel, env=base_env)
             else:
-                commit_msg = msg
+                # Path no longer on disk (a `git mv` already staged the rename):
+                # record the removal in the commit too.
+                res = _git(git_root, "rm", "--cached", "--", rel, env=base_env)
+            if res.returncode != 0:
+                print(f"[RVC] Warning: could not stage {rel}:\n{res.stderr.strip()}")
+        if skip_ci and "[skip ci]" not in msg:
+            msg = f"{msg} [skip ci]"
+        res = _git(git_root, "commit", "-m", msg, env=base_env)
+        if res.returncode != 0:
+            print(f"[RVC] Warning: commit failed:\n{res.stderr.strip()}")
+            return
+    finally:
+        if os.path.exists(tmp_index):
+            try:
+                os.remove(tmp_index)
+            except OSError:
+                pass
+
+    # Re-stage surviving paths in the real index so post-commit status is clean —
+    # a newly minted file is in HEAD but absent from the index otherwise.
+    for fp in file_paths:
+        if os.path.isfile(fp):
+            _git(git_root, "add", "--", os.path.relpath(os.path.abspath(fp), git_root))
+
+    if _push_enabled(vault_path):
+        rc, out, err = run_cmd("git push", cwd=git_root)
+        if rc != 0:
+            print(f"[RVC] Warning: Git push failed:\n{err}")
         else:
-            commit_msg = msg
-        run_cmd(f"git commit -m '{commit_msg}'", cwd=git_root)
-        if _push_enabled(vault_path):
-            rc, out, err = run_cmd("git push", cwd=git_root)
-            if rc != 0:
-                print(f"[RVC] Warning: Git push failed:\n{err}")
-        else:
-            print("[RVC] Skipping push (opt-in: RVC_PUSH=1 env or `push=true` in .rvc-root)")
+            print("[RVC] Pushed.")
+    else:
+        print("[RVC] Skipping push (opt-in: RVC_PUSH=1 env or `push=true` in .rvc-root)")
 
 
 def _parse_gitmodules(repo_root):

@@ -164,7 +164,7 @@ def get_recent_vault_commits(vault_path, count=5):
         return []
 
 
-def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, log_count=5):
+def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, log_count=5, write=False):
     """Render the plate: seven lanes computed from folders, priorities and open ask boxes."""
     tree = resolve_tree(vault_path)
     aliases, owner = read_plate_config(vault_path)
@@ -276,30 +276,48 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
         "overdue": f"OVERDUE — no new section ≥ {stale_days} days",
         "inbox": "INBOX — deposits, acknowledged not actionable",
     }
-    print(f"PLATE — {os.path.basename(vault_path)} — {today.isoformat()} — derived from the tree")
+    lines = [f"PLATE — {os.path.basename(vault_path)} — {today.isoformat()} — derived from the tree"]
     for key, rows in lanes.items():
-        print(f"\n{titles[key]}  [{len(rows)}]")
+        lines.append(f"\n{titles[key]}  [{len(rows)}]")
         if not rows:
-            print("  —")
+            lines.append("  —")
             continue
         for row in rows:
             if key in ("owes_turn", "owner"):
                 ask = f" — {row['ask']}" if row.get("ask") else ""
-                print(f"  {row['path']}{ask}")
+                lines.append(f"  {row['path']}{ask}")
             elif key == "active":
-                print(f"  {row['name']}  open={row['open_boxes']} done={row['done_boxes']}")
+                lines.append(f"  {row['name']}  open={row['open_boxes']} done={row['done_boxes']}")
             elif key == "next":
-                print(f"  {row['priority'] or '—':>3}  {row['name']}")
+                lines.append(f"  {row['priority'] or '—':>3}  {row['name']}")
             elif key == "overdue":
-                print(f"  {row['age_days']:>3}d  {row['path']}  (last: {row['last_speaker']})")
+                lines.append(f"  {row['age_days']:>3}d  {row['path']}  (last: {row['last_speaker']})")
             elif key == "inbox":
-                print(f"  {row['name']}  type={row['type'] or '—'}")
+                lines.append(f"  {row['name']}  type={row['type'] or '—'}")
             else:
-                print(f"  {row['name']}  pri={row['priority'] or '—'}")
+                lines.append(f"  {row['name']}  pri={row['priority'] or '—'}")
 
     if recent_commits:
-        print(f"\nRECENT ACTIVITY (last {len(recent_commits)} commits)")
+        lines.append(f"\nRECENT ACTIVITY (last {len(recent_commits)} commits)")
         for c in recent_commits:
-            print(f"  {c['hash']}  {c['relative_time']:<14} ({c['author']}) {c['subject']}")
+            lines.append(f"  {c['hash']}  {c['relative_time']:<14} ({c['author']}) {c['subject']}")
+
+    rendered = "\n".join(lines)
+    print(rendered)
+
+    # STORY-034 AC3: the constitution calls PLATE.md "a rendering, not a record";
+    # --write refreshes it from the tree so it cannot silently rot. Only the text
+    # rendering is persistable — JSON is a data payload, not a plate document.
+    if write:
+        if fmt != "text":
+            print("[RVC] Warning: --write persists the text rendering only; "
+                  "ignored for --format json.", file=sys.stderr)
+        else:
+            plate_dir = tree.get("roadmap") or "10_CONTEXT"
+            plate_path = os.path.join(vault_path, plate_dir, "PLATE.md")
+            os.makedirs(os.path.dirname(plate_path), exist_ok=True)
+            with open(plate_path, "w") as f:
+                f.write(rendered + "\n")
+            print(f"[RVC] Wrote plate rendering: {plate_path}")
 
 

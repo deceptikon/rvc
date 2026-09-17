@@ -122,7 +122,7 @@ Case-insensitive grep over every `.md` file in the vault; prints
 
 ```
 rvc plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]
-          [--log-count ⟨N⟩] [--no-log]
+          [--log-count ⟨N⟩] [--no-log] [--write]
 ```
 Render the plate: lanes computed from folders, priorities and open asks
 (`next`, `active`, `waiting`, `overdue`, `inbox`, `owes_turn`, `owner`), plus
@@ -131,6 +131,9 @@ recent vault git activity.
 identity-free. `--format json` emits a machine-readable payload including `recent_activity`.
 `--stale-days` is the overdue threshold (default 7). `--log-count` controls the number of
 recent vault commits to show (default 5; `--no-log` disables).
+`--write` also persists the text rendering to the tree's `PLATE.md`
+(`10_CONTEXT/PLATE.md` on a newvault tree) — the constitution calls the plate a
+rendering, not a record, so it must be rebuildable from the tree alone.
 
 ### `rvc doctor`
 

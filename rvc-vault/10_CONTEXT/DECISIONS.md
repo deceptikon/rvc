@@ -3,6 +3,24 @@
 Format: `## <date> — <agent> — <title>` + 2–4 lines of rationale. Never delete the *why* of a
 live decision; compress superseded ones to one line pointing at the resolving commit/story.
 
+## 2026-09-17 — opencode — transitions never lie, never sweep, and the plate can rewrite itself (STORY-034)
+- **A transition must resolve its handle before it prints anything.** `rvc issue <ID> <verb>` now
+  exits non-zero with `no issue matches <ID>` before `sync_before` runs — a false green (printed a
+  move that never happened) is worse than an error, because the operator trusts the bucket.
+- **RVC commits only what RVC staged.** `sync_after` commits from a throwaway index seeded with
+  `git read-tree HEAD` (GIT_INDEX_FILE), staging only the moved/created paths (add for survivors,
+  `git rm --cached` for a `git mv`'d-away path), then re-stages survivors in the real index. A bare
+  `git commit` can never sweep an operator's pre-staged work again; argv subprocess calls also kill
+  the shell-quoting bug class for messages with apostrophes.
+- **`rvc plate --write` persists the rendering.** PLATE.md is "a rendering, not a record" per the
+  constitution, so text output is refactored to one string; `--write` writes that exact string to
+  `tree.roadmap/PLATE.md` (10_CONTEXT). Without `--write`, stdout-only behavior is untouched; JSON
+  is a data payload and is never persisted.
+- **Triage owns the type gate.** `rvc issue <ID> triage` reads frontmatter `type:` and refuses
+  non-issue types (`proposal`, `feedback`, …) with a stderr warning — those documents have no
+  bucket mapping and were rotting in 40_DECIDE. Other verbs (block, supersede, done, …) still route
+  any file; the gate is triage-only.
+
 - Dogfooding note: this vault moved to the **newvault** tree on 2026‑09‑13 (`rvc project init
   --tree newvault`), legacy content migrated by `git mv`, root `README.md` regenerated from
   `README_TEMPLATE`. Deep specs: `10_CONTEXT/specs/DECISION-Domain-Structuring.md` (domain

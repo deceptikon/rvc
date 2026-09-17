@@ -11,6 +11,13 @@ from rvc.core import (
 )
 from rvc.git import sync_before, sync_after
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
+from rvc.plate import plate_frontmatter
+
+# Issue types recognized by the issue lifecycle (aligned with `rvc create --type`
+# and PLATE_ISSUE_TYPES). Any other `type:` (proposal, feedback, note, …) has no
+# bucket mapping — triage refuses to park those and tells the operator to place
+# them by hand (STORY-034 AC4).
+RVC_ISSUE_TYPES = ("story", "epic", "bug", "task")
 
 
 def cmd_get(vault_path, item_id):
@@ -35,12 +42,30 @@ def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
         print(f"        Valid actions: {', '.join(sorted(tree.keys()))}")
         sys.exit(1)
 
-    sync_before(vault_path)
-
+    # STORY-034 AC1: resolve the handle before *any* other output or side effect.
+    # A miss must exit non-zero with "no issue matches <handle>" — never print a
+    # transition line (a false green is worse than an error).
     file_path = find_file_by_id(vault_path, issue_id)
     if not file_path:
-        print(f"Error: Item {issue_id} not found.")
+        print(f"Error: no issue matches {issue_id}", file=sys.stderr)
         sys.exit(1)
+
+    # STORY-034 AC4: triage only routes issue files into the queue. A proposal (or
+    # any non-issue document) has no bucket mapping in the tree — say so at triage
+    # time instead of parking it in a bucket it does not belong to.
+    if action == "triage":
+        try:
+            with open(file_path, "r", errors="replace") as f:
+                doc_text = f.read()
+        except OSError:
+            doc_text = ""
+        doc_type = plate_frontmatter(doc_text).get("type", "").strip().lower()
+        if doc_type not in RVC_ISSUE_TYPES:
+            print(f"Warning: type '{doc_type or '—'}' has no triage target — manual "
+                  "placement required.", file=sys.stderr)
+            sys.exit(1)
+
+    sync_before(vault_path)
 
     target_rel = tree[action]
     target_folder = os.path.join(vault_path, target_rel)
