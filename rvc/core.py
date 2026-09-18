@@ -461,6 +461,32 @@ def _lock_release(fd):
         pass
 
 
+def _pid_alive(pid):
+    """Cheap liveness probe: does a process with this pid exist right now?"""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by another user
+    return True
+
+
+def _lock_record(fd):
+    """Read the `pid=<n>` diagnostic record currently in the lock file."""
+    try:
+        os.lseek(fd, 0, os.SEEK_SET)
+        return os.read(fd, 64).decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+
 @contextmanager
 def vault_create_lock(vault_path):
     lock_path = os.path.join(vault_path, LOCK_FILE_NAME)
@@ -469,10 +495,24 @@ def vault_create_lock(vault_path):
     try:
         while not _lock_acquire(fd):
             if time.monotonic() >= deadline:
+                holder = _lock_record(fd)
                 msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
                        "process — aborting to avoid a duplicate-ID race.")
+                if holder:
+                    msg = msg.replace("by another process", f"by {holder}")
                 raise TimeoutError(msg)
             time.sleep(0.05)
+
+        # The flock is the authoritative lock; the pid record is diagnostic. If
+        # it names a dead process, the marker is a leftover from an interrupted
+        # create — a crashed holder's flock was released by the kernel, so this
+        # marker was never going to block us; say so instead of letting a stale
+        # `pid=` file read as an active lock (STORY-130).
+        written = _lock_record(fd)
+        m = re.match(r"^pid=(\d+)$", written)
+        if m and not _pid_alive(m.group(1)):
+            print(f"[RVC] Reclaiming stale create-lock "
+                  f"({LOCK_FILE_NAME}: pid={m.group(1)} is gone).")
         try:
             os.truncate(fd, 0)
             os.write(fd, f"pid={os.getpid()}\n".encode())
@@ -480,6 +520,19 @@ def vault_create_lock(vault_path):
             pass
         yield
     finally:
+        # Clean up so a successful create leaves no residue (STORY-130: the file
+        # used to accumulate untracked at the vault root). Unlink only while the
+        # path still names the inode we locked, and only while we still hold the
+        # flock: waiters that already opened this inode keep serializing among
+        # themselves, and a brand-new opener after the unlink starts fresh. The
+        # inode check guarantees we never delete a replacement file.
+        try:
+            st_path = os.stat(lock_path)
+            st_fd = os.fstat(fd)
+            if st_path.st_dev == st_fd.st_dev and st_path.st_ino == st_fd.st_ino:
+                os.remove(lock_path)
+        except OSError:
+            pass
         _lock_release(fd)
         os.close(fd)
 

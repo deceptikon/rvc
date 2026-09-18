@@ -17,11 +17,27 @@ def _git(git_root, *args, env=None):
 
 def sync_before(vault_path):
     git_root = find_git_root(vault_path)
-    if git_root:
-        print("[RVC] Synchronizing state (git pull --rebase)...")
-        rc, out, err = run_cmd("git pull --rebase", cwd=git_root)
-        if rc != 0:
-            print(f"[RVC] Warning: Git pull failed:\n{err}")
+    if not git_root:
+        return
+    rc, out, _ = run_cmd("git status --porcelain", cwd=git_root)
+    if out.strip():
+        # `git pull --rebase` aborts on any unstaged change with a raw
+        # "cannot pull with rebase: You have unstaged changes" — noise on a
+        # routine transition (FEEDBACK-rvc, 2026-09-17/18). When the tree is
+        # dirty, skip the pull calmly; nothing is clobbered, nothing lost.
+        print("[RVC] Local changes present — skipping `git pull --rebase` "
+              "(nothing is clobbered).")
+        return
+    print("[RVC] Synchronizing state (git pull --rebase)...")
+    rc, out, err = run_cmd("git pull --rebase", cwd=git_root)
+    if rc != 0:
+        print(f"[RVC] Warning: Git pull failed:\n{err}")
+
+
+def is_tracked(git_root, path):
+    """True if `path` is under version control in `git_root` (argv, no shell)."""
+    rel = os.path.relpath(os.path.abspath(path), git_root)
+    return _git(git_root, "ls-files", "--error-unmatch", "--", rel).returncode == 0
 
 
 def _push_enabled(vault_path):
@@ -63,8 +79,14 @@ def sync_after(vault_path, file_paths, msg, skip_ci=True):
             if os.path.isfile(fp):
                 res = _git(git_root, "add", "--", rel, env=base_env)
             else:
-                # Path no longer on disk (a `git mv` already staged the rename):
-                # record the removal in the commit too.
+                # Path no longer on disk (moved away). Record the removal only
+                # if it was tracked in the commit index — an untracked source
+                # (never committed) has nothing to remove, and `git rm --cached`
+                # on it would print a spurious pathspec warning (STORY-129).
+                res_ls = _git(git_root, "ls-files", "--error-unmatch", "--", rel,
+                              env=base_env)
+                if res_ls.returncode != 0:
+                    continue
                 res = _git(git_root, "rm", "--cached", "--", rel, env=base_env)
             if res.returncode != 0:
                 print(f"[RVC] Warning: could not stage {rel}:\n{res.stderr.strip()}")

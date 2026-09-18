@@ -60,15 +60,49 @@ def test_concurrent_creates_mint_unique_ids():
         assert fm["id"] == fname.split("-")[0] + "-" + fname.split("-")[1].split(".")[0]
 
 
-def test_lock_file_is_created_beside_rvc_root():
-    """The lock lives at vault root and is a plain, removable file."""
+def test_lock_file_cleaned_up_after_success():
+    """STORY-130: a successful create removes `.rvc-create.lock` — no residue.
+
+    The old contract left the marker file behind forever; it accumulated
+    untracked at the vault root with a stale `pid=` that read as an active lock.
+    """
     _, vault = make_vault()
     rvc_cli.cmd_create_issue(vault, "Lock Probe", priority="P1")
     lock = os.path.join(vault, rvc_cli.LOCK_FILE_NAME)
-    assert os.path.exists(lock)
-    assert os.path.isfile(lock)
-    # Not a dir, not a symlink — and regular create leaves it unlocked.
-    os.remove(lock)
+    assert not os.path.exists(lock), \
+        f"lock must be cleaned up on success, still present: {lock}"
+
+
+def test_lock_reclaims_stale_pid_from_dead_process():
+    """STORY-130: a leftover lock naming a dead process is reclaimed, not held."""
+    import subprocess as _sp
+    import sys as _sys
+    probe = _sp.Popen([_sys.executable, "-c", "pass"])
+    dead_pid = probe.pid
+    assert probe.wait() == 0
+
+    _, vault = make_vault()
+    lock = os.path.join(vault, rvc_cli.LOCK_FILE_NAME)
+    with open(lock, "w") as f:
+        f.write(f"pid={dead_pid}\n")
+
+    path = rvc_cli.cmd_create_issue(vault, "Stale Probe", priority="P1")
+    assert os.path.exists(path), "create must succeed over a stale lock"
+    assert not os.path.exists(lock), "stale lock must be reclaimed and removed"
+
+
+def test_pid_alive_distinguishes_live_dead_garbage():
+    """Liveness probe: live pid True, dead pid False, garbage False."""
+    import subprocess as _sp
+    import sys as _sys
+    assert rvc_cli._pid_alive(os.getpid()) is True
+    probe = _sp.Popen([_sys.executable, "-c", "pass"])
+    dead_pid = probe.pid
+    assert probe.wait() == 0
+    assert rvc_cli._pid_alive(dead_pid) is False
+    assert rvc_cli._pid_alive("not-a-pid") is False
+    assert rvc_cli._pid_alive("0") is False
+    assert rvc_cli._pid_alive("-5") is False
 
 
 def test_lock_degrades_gracefully_without_primitives():

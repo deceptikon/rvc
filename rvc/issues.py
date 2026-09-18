@@ -9,7 +9,7 @@ from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, state_label, run_cmd, find_git_root,
     find_file_by_id, vault_create_lock, _next_id, LEGACY_PRIORITY_TO_P, STATUS_ALIAS
 )
-from rvc.git import sync_before, sync_after
+from rvc.git import sync_before, sync_after, is_tracked
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
 from rvc.plate import plate_frontmatter
 
@@ -77,14 +77,22 @@ def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
     if os.path.abspath(file_path) != os.path.abspath(new_file_path):
         moved = False
         git_root = find_git_root(vault_path)
-        if git_root:
+        src_tracked = bool(git_root) and is_tracked(git_root, file_path)
+        if not src_tracked:
+            # A deposit that was never committed (hand-placed, or a create whose
+            # commit did not land): plain move with a friendly note. This used
+            # to cascade raw `git mv failed (fatal: not under version control)`
+            # and `could not stage` warnings before landing (STORY-129).
+            print(f"[RVC] {os.path.basename(file_path)} is untracked — "
+                  "plain move (no `git mv`).")
+        elif git_root:
             rc, _, err = run_cmd(f"git mv '{file_path}' '{new_file_path}'", cwd=git_root)
             if rc == 0:
                 moved = True
             else:
                 print(f"[RVC] git mv failed ({err.strip()}); falling back to plain move.")
         if not moved:
-            if git_root:
+            if git_root and src_tracked:
                 run_cmd(f"git rm -f '{file_path}'", cwd=git_root)
             os.rename(file_path, new_file_path)
 
@@ -212,7 +220,14 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
             lines.append(f"# {issue_id}: {title}")
             lines.append("")
             if body:
-                lines.append(body.replace("\\n", "\n"))
+                body_text = body.replace("\\n", "\n").lstrip("\n")
+                # The canonical `# {issue_id}: {title}` heading is emitted
+                # above. Drop one redundant leading H1 the body may carry so it
+                # renders once instead of twice (STORY-130 --body).
+                head, sep, rest = body_text.partition("\n")
+                if head.lstrip().startswith("# "):
+                    body_text = rest.lstrip("\n")
+                lines.append(body_text if body_text else "")
             else:
                 lines.append("## Context")
                 lines.append("")
