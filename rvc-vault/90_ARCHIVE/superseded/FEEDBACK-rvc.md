@@ -1,28 +1,13 @@
 ---
-type: feedback
-tags: [rvc, feedback]
+type: note
+tags: [feedback, rvc]
+created: 2026-09-17
+author: opencode
 ---
 
 # FEEDBACK — rvc
 
-- **2026-09-17 — `rvc issue <ID> <verb>` reports success on a no-op when the handle resolves to no file.**
-  `rvc issue PROPOSAL supersede` printed `[RVC] Issue PROPOSAL moved to superseded (90_ARCHIVE/superseded)`
-  and `[RVC] Committing state...`, but nothing moved and no commit was created — the target file is
-  `type: proposal` with no `id:` field, so the ID lookup matched nothing. A false green is worse than an
-  error: I would have trusted the bucket. Ask: resolve the handle first and exit non-zero with
-  "no issue matches <handle>", before printing any transition line. (Moved by hand in `3645eb9`.)
-- **2026-09-17 — that same transition committed later, sweeping an unrelated staged index.** Its commit
-  landed after mine had released the index lock, and the bare `git commit` then took whatever was staged
-  at that moment: 48 lines of `DECISIONS.md` + this file ended up under the message
-  `rvc: Issue PROPOSAL -> superseded [skip ci]`. Two asks: scope the commit to the moved path
-  (`git commit -- <path>`), and never commit an index you did not stage.
-- **2026-09-17 — `rvc plate` renders to stdout but cannot write `10_CONTEXT/PLATE.md`.** The
-  constitution makes `PLATE.md` "a rendering, not a record … must be rebuildable from the tree alone",
-  yet nothing rebuilds it: after today's transitions it disagrees with the tree and only a hand-edit can
-  refresh it, which is the one thing the rule forbids. Ask: `rvc plate --write` (or auto-write on any
-  transition) so the rendering cannot silently rot.
-- **2026-09-17 — the bucket a proposal belongs in has no name in the tree.** `40_DECIDE` is defined as
-  "one question per file, with a block: decision needed · options · recommendation · default if
-  unanswered" — a design proposal with an action checklist does not fit that shape, yet it sat there for
-  four days. If `00_INBOX` deposits of type `proposal` have no transition target, `rvc` should say so at
-  triage time rather than leave them to rot in the blocked bucket.
+- **2026-09-17 (STORY-129, opencode):** `rvc issue start` on an issue file that was never committed (`??` under `20_NEXT/`) prints a three-warning cascade — pull-abort on unrelated unstaged WIP (`cannot pull with rebase: You have unstaged changes`), then `git mv failed (fatal: not under version control, …)`, then `could not stage <old path>` — before recovering to a plain move + add. The transition lands correctly, but the output reads like failure and cost a verification round-trip. Either `rvc create` should always commit the new file, or `start` should say "untracked source — falling back to plain move" instead of citing raw `git mv` fatals.
+- **2026-09-17 (STORY-130, opencode):** `rvc create --body` duplicates the H1 — the CLI inserts `# STORY-<n>: <title>` and appends the body verbatim, so a body that opens with its own title heading renders it twice (edited out by hand). Also: a successful `create` leaves `.rvc-create.lock` (`pid=<dead>`) behind in the vault root; it accumulates untracked until someone deletes it, and a stale `pid=` file is indistinguishable from an active lock without a liveness check.
+- **2026-09-18 (STORY-137, opencode):** both 2026-09-17 items reproduced. The pull-abort on unrelated unstaged WIP (`cannot pull with rebase: You have unstaged changes`) fired on `start` *and* `done`; `.rvc-create.lock` still accumulates after `create`. Transitions continue to land correctly, so this is output/cleanup noise, not data loss — but it re-costs a verification round-trip each time.
+- **2026-09-19 (superseded, opencode):** all three items executed and verified in RVC — **STORY-035** (quiet untracked transitions, `--body` H1 dedup, lock cleanup + liveness). This copy was moved (not deleted) here from `adlai-vault/00_INBOX/` as an exceptional handoff: the letter belongs to RVC's vault, where the record now lives.
