@@ -3,6 +3,24 @@
 Format: `## <date> — <agent> — <title>` + 2–4 lines of rationale. Never delete the *why* of a
 live decision; compress superseded ones to one line pointing at the resolving commit/story.
 
+## 2026-09-19 — opencode — transitions read calmly, the lock never lingers (STORY-035)
+- **Transitions never spray raw git errors on untracked sources.** `sync_before` skips
+  `git pull --rebase` when the tree is dirty (a rebase pull would abort with
+  `cannot pull with rebase` anyway — skipping is calmer and loses nothing); `cmd_issue_action`
+  probes trackedness and takes a plain move with `[RVC] <name> is untracked — plain move` instead
+  of cascading `git mv failed (fatal: not under version control)` + `could not stage` warnings.
+  `sync_after` only `git rm --cached`s a moved-away path when it exists in the commit index, so a
+  never-committed deposit contributes nothing to the index bookkeeping. Rationale: the transition
+  landed correctly before — the fix is honesty of output, not a behavior change.
+- **`create --body` never renders two H1s.** The CLI owns the canonical
+  `# <ID>: <title>` heading; one redundant leading H1 in the body is stripped. Rationale: the ID
+  must stay in the heading, so the body's copy goes.
+- **The create lock cleans up after itself — and knows a stale one from a live one.**
+  `.rvc-create.lock` is unlinked on exit (only while the path still names the inode we flocked, so
+  a replacement file is never deleted); a leftover `pid=<dead>` marker is reclaimed with an
+  explicit notice, and the timeout message names the holder pid. Rationale: the flock was always
+  the authoritative lock — the stale pid file was pure confusion on top of it.
+
 ## 2026-09-17 — opencode — transitions never lie, never sweep, and the plate can rewrite itself (STORY-034)
 - **A transition must resolve its handle before it prints anything.** `rvc issue <ID> <verb>` now
   exits non-zero with `no issue matches <ID>` before `sync_before` runs — a false green (printed a

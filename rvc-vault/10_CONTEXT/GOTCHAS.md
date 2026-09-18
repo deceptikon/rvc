@@ -1,5 +1,18 @@
 # GOTCHAS — Non-obvious Bugs & Environment Traps (rvc-vault)
 
+- **A transition on a never-committed issue is a plain move, and that is fine.** `rvc issue
+  <ID> start|done` on a `??` deposit prints `[RVC] <name> is untracked — plain move` and commits
+  the moved file — no `git mv` rename is recorded (there was nothing to rename). History for such
+  files starts at the transition commit; the deposit itself was never in git.
+- **`sync_before` skips the pull when the working tree is dirty.** `git pull --rebase` aborts on
+  any unstaged change, so a dirty tree (e.g. an untracked deposit) always produced a scary
+  `cannot pull with rebase: You have unstaged changes` on every transition. Now the pull is simply
+  skipped with a one-line notice; run `git pull` by hand after clearing the tree.
+- **`.rvc-create.lock` is a flock, not a pid file — and now it is gone after success.** The
+  `pid=` line inside is diagnostic only; the flock is authoritative (a crashed holder's flock is
+  released by the kernel). Since STORY-035 the marker is removed on a clean exit, and a leftover
+  stale `pid=` is reclaimed with an explicit notice. Never trust a leftover `.rvc-create.lock` as
+  "locked" — it is stale by definition.
 - **`rvc` on PATH** is the folder-as-state CLI (symlink → `~/X/TEAMFLOW/RVC/rvc-cli.py`).
   If that symlink ever points elsewhere (it used to target the parked plate-based "RVC 0-point"
   engine at `~/W/RVC_reload/rvc.py`), re-run `python3 rvc-cli.py install --force`.
