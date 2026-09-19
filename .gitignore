@@ -17,3 +17,7 @@ Thumbs.db
 .rvc-create.lock
 .rvc-context-cache.json
 .rvc-context-cache.sqlite*
+
+# throwaway feedback sandbox
+/TestProject/
+/TestProject-rvc/

@@ -27,8 +27,33 @@ from rvc.issues import _sanitize_filename
 _BUG_ID_RE = re.compile(r"^(BUG-\d+)")
 
 
-def _feedback_target(vault_path, explicit):
-    """Where feedback ingests: `--to` wins, then `feedback.to=` in .rvc-root, then env."""
+def _default_feedback_target(cli_root=None):
+    """Auto-discover the RVC vault next to the installed CLI.
+
+    `rvc` on PATH is a symlink/launcher into RVC's own `rvc-cli.py`; the RVC
+    vault lives at its sibling `rvc-vault/`. The tool knows its own home, so a
+    client never has to point at it. `cli_root` is a test hook.
+    """
+    if cli_root is None:
+        argv0 = sys.argv[0] if sys.argv and sys.argv[0] else None
+        if not argv0:
+            return None
+        cli_root = os.path.dirname(os.path.realpath(argv0))
+    if not cli_root:
+        return None
+    candidate = os.path.join(cli_root, "rvc-vault")
+    if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, ".rvc-root")):
+        return os.path.abspath(candidate)
+    return None
+
+
+def _feedback_target(vault_path, explicit, cli_root=None):
+    """Resolve the feedback target: `--to` > `feedback.to=` in .rvc-root >
+    RVC_FEEDBACK_TO env > auto-discovery (the RVC vault next to the CLI).
+
+    The persisted `.rvc-root` line is the tool's own auto-written memory of the
+    first `--to`, so subsequent runs need no flag at all.
+    """
     if explicit:
         return os.path.abspath(explicit)
     root_file = os.path.join(vault_path, ".rvc-root")
@@ -43,7 +68,7 @@ def _feedback_target(vault_path, explicit):
     env = os.environ.get("RVC_FEEDBACK_TO", "").strip()
     if env:
         return os.path.abspath(env)
-    return None
+    return _default_feedback_target(cli_root)
 
 
 def _feedback_title(text):
@@ -56,6 +81,46 @@ def _feedback_title(text):
             return stripped[2:].strip()[:80] or None
         return stripped[:80]
     return None
+
+
+def _ensure_feedback_config(client_vault, target, name="rvc", alias="F"):
+    """Auto-configure the client's `.rvc-root` feedback lane.
+
+    Writes `feedback.to=`, `plate.source.<name>=`, `plate.alias.<name>=` only
+    when missing (idempotent; a user's own values win). Returns the lines added
+    so the caller can report them. Never configures a vault against itself.
+    """
+    if os.path.abspath(client_vault) == os.path.abspath(target):
+        return []
+    root_file = os.path.join(client_vault, ".rvc-root")
+    present = set()
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("feedback.to="):
+                    present.add("feedback.to")
+                elif line.startswith(f"plate.source.{name}="):
+                    present.add("plate.source")
+                elif line.startswith(f"plate.alias.{name}="):
+                    present.add("plate.alias")
+    want = [
+        ("feedback.to", f"feedback.to={target}"),
+        ("plate.source", f"plate.source.{name}={target}"),
+        ("plate.alias", f"plate.alias.{name}={alias}"),
+    ]
+    added = [text for key, text in want if key not in present]
+    if not added:
+        return []
+    content = ""
+    if os.path.exists(root_file):
+        with open(root_file, "r", errors="replace") as f:
+            content = f.read()
+    if content and not content.endswith("\n"):
+        content += "\n"
+    with open(root_file, "w") as f:
+        f.write(content + "\n".join(added) + "\n")
+    return added
 
 
 def _bug_counts(vault_path):
@@ -108,12 +173,14 @@ def _release_source(src, issue_id, origin):
     return "Source removed and committed on the client side."
 
 
-def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=True):
+def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=True, cli_root=None):
     """Ingest an external feedback letter into the RVC vault as a BUG-<n> issue.
 
     `vault_path` is the *submitting* vault (the CWD the command runs in); the
-    letter is moved into the RVC vault resolved via `--to`, `feedback.to=` in
-    this vault's `.rvc-root`, or the RVC_FEEDBACK_TO env var.
+    target is resolved via `--to`, the client's own `.rvc-root` (auto-written on
+    first use), RVC_FEEDBACK_TO, or auto-discovery of the vault next to the CLI.
+    The client's `.rvc-root` feedback lane is auto-configured on first use, so
+    no manual setup is ever needed on the client side.
     """
     src = os.path.abspath(source)
     if not os.path.isfile(src):
@@ -125,11 +192,11 @@ def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=
         print(f"Error: feedback file is empty: {src}")
         sys.exit(1)
 
-    target = _feedback_target(vault_path, to)
+    target = _feedback_target(vault_path, to, cli_root=cli_root)
     if not target:
         print("Error: no feedback target vault.")
-        print("        Pass --to <vault>, or add `feedback.to=<path>` to this vault's .rvc-root,")
-        print("        or set RVC_FEEDBACK_TO.")
+        print("        Pass --to <vault>, add `feedback.to=<path>` to this vault's .rvc-root,")
+        print("        set RVC_FEEDBACK_TO, or run from a vault near an installed RVC CLI.")
         sys.exit(1)
     if not os.path.isdir(target):
         print(f"Error: feedback target is not a directory: {target}")
@@ -189,11 +256,18 @@ def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=
     if remove:
         removal = _release_source(src, issue_id, origin)
 
+    configured = _ensure_feedback_config(vault_path, target)
+
     pending, done = _bug_counts(target)
     print(f"[RVC] {issue_id} ingested into {os.path.basename(target)} (origin: {origin})")
     if removal:
         print(f"[RVC] {removal}")
-    print(f"[RVC] To track it on this vault's plate, add to {os.path.join(vault_path, '.rvc-root')}:")
-    print(f"      plate.source.rvc={target}")
+    if os.path.abspath(vault_path) != os.path.abspath(target):
+        if configured:
+            print(f"[RVC] Auto-configured this vault's plate in {os.path.join(vault_path, '.rvc-root')}:")
+            for text in configured:
+                print(f"      {text}")
+        else:
+            print(f"[RVC] Feedback lane already configured ({os.path.join(vault_path, '.rvc-root')}).")
     print(f"RVC BUGS — pending: {', '.join(pending) or '—'} | done: {done} of {done + len(pending)}")
     return filepath

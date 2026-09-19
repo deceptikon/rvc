@@ -143,3 +143,10 @@ live decision; compress superseded ones to one line pointing at the resolving co
   content crosses the boundary. Lifecycle stays folder-owned on the RVC side.
 - **The letter travels.** Source file is removed after ingest (`git rm` + commit when tracked,
   plain delete otherwise), with `--no-remove` as an escape hatch.
+- **Setup is automatic (amended during review).** A client never hand-edits `.rvc-root`.
+  Target resolution: `--to` > `feedback.to=` (the line the tool itself wrote) >
+  `RVC_FEEDBACK_TO` > auto-discovery of the `rvc-vault/` sibling of the installed CLI
+  (`realpath(argv[0])` — the launcher lives in RVC's own repo). First use self-writes the
+  client's `feedback.to=` / `plate.source.<name>=` / `plate.alias.<name>=` idempotently
+  (user values win; a vault never configures itself). Validated in a throwaway TestProject
+  sandbox before any live-vault rollout.

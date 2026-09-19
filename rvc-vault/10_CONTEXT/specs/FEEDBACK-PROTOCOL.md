@@ -1,8 +1,8 @@
 # Feedback to RVC — client protocol (for rvc-viewed projects)
 
 Found a bug or friction in RVC tooling? File it in one command. No vault-to-vault
-letter-dropping, no remembered dance — the report becomes a real `BUG-<n>` in RVC's
-vault and shows up on *your* plate until it's fixed.
+letter-dropping, no config editing, no remembered dance — the report becomes a real
+`BUG-<n>` in RVC's vault and shows up on *your* plate until it's fixed.
 
 ## 1. Write the report
 
@@ -22,14 +22,21 @@ One file = one report.
 rvc feedback @00_INBOX/FEEDBACK-rvc.md
 ```
 
-That's it. The letter becomes `BUG-<n>` in RVC's vault (`origin: <your project>` in
-frontmatter), the source file is removed, and the command prints your dashboard line:
+That's it. No setup — the command handles everything itself:
+
+- the letter becomes `BUG-<n>` in RVC's vault (`origin: <your project>` in frontmatter),
+- the source file is removed (and committed as a handoff),
+- your vault's `.rvc-root` gets its feedback lane configured for you on first use
+  (`feedback.to=`, `plate.source.rvc=`, `plate.alias.rvc=F`),
+- it prints your dashboard line:
 
 ```text
 RVC BUGS — pending: BUG-14 | done: 0 of 1
 ```
 
-> `--no-remove` keeps the source letter; `--to <path>` overrides the configured target.
+> `--no-remove` keeps the source letter; `--to <path>` targets a different vault than
+> the auto-discovered one. Your own handwritten `.rvc-root` lines still win over the
+> auto-written ones.
 
 ## 3. Watch it
 
@@ -43,17 +50,3 @@ EXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)
 - **`F-<n>` is *your* feedback** — an alias of RVC's `BUG-<n>` so you can tell it apart
   from your own issues at a glance. The record in RVC stays `BUG-14`.
 - An item flips to `done` when RVC lands the fix.
-
-## Setup (once)
-
-Append to your vault's `.rvc-root`:
-
-```
-feedback.to=<path-to-RVC-vault>
-plate.source.rvc=<path-to-RVC-vault>
-plate.alias.rvc=F
-```
-
-- `feedback.to` — target for `rvc feedback` when you don't pass `--to`.
-- `plate.source.rvc` — where your plate reads RVC's tree from.
-- `plate.alias.rvc` — the one-letter provenance alias (here `F`).

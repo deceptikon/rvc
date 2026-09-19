@@ -427,7 +427,7 @@ def handle_feedback(args):
         cmd_help("feedback")
         return
     vault = _require_vault(args.path)
-    cmd_feedback(vault, args.file, to=args.to, origin=args.origin,
+    cmd_feedback(vault, args.file.lstrip("@"), to=args.to, origin=args.origin,
                  remove=not args.no_remove, skip_ci=args.skip_ci)
 
 

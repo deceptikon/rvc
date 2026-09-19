@@ -44,6 +44,16 @@ that dance into one command with a real, trackable type of work — no parallel 
 - Demo dogfooded STORY-035 too — the new bug's first transition printed the
   "untracked — plain move" note.
 
+# Review amendment (2026-09-19)
+
+Review caught a UX gap: a client must not hand-edit `.rvc-root`. Setup is now automatic —
+`rvc feedback` resolves the target from `--to` > the client's own (auto-written)
+`feedback.to=` > env > auto-discovery of the `rvc-vault/` sibling of the installed CLI, and
+self-writes the client's `feedback.to=` / `plate.source.rvc=` / `plate.alias.rvc=F` lines on
+first use (idempotent, user values win, a vault never configures itself). Four new tests
+(96 passed). Still to be validated in a throwaway TestProject sandbox before any live-vault
+rollout.
+
 # DoD
 
 - Suite green (92 passed, 0 failed).
