@@ -23,7 +23,7 @@ def main(argv=None):
             return 0
 
     # Commands requiring arguments: show help if invoked bare instead of error
-    if len(argv) == 1 and argv[0] in ("issue", "project", "context", "create", "get", "search", "git-commit-all"):
+    if len(argv) == 1 and argv[0] in ("issue", "project", "context", "create", "feedback", "get", "search", "git-commit-all"):
         cmd_help(argv[0])
         return 0
 

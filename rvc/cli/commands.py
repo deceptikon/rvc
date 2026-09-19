@@ -12,6 +12,7 @@ from rvc.git import cmd_git_commit_all
 from rvc.issues import (
     cmd_get, cmd_issue_action, cmd_issue_list, cmd_create_issue, cmd_search
 )
+from rvc.feedback import cmd_feedback
 from rvc.context import (
     cmd_context, context_cache_update, CONTEXT_DEFAULT_TOP_K,
     CONTEXT_DEFAULT_BUDGET, CONTEXT_CACHE_NAME
@@ -311,6 +312,15 @@ def cmd_help(subgroup=None):
         print("      --no-log     disable the recent activity git log")
         print("      --write      also persist the text rendering to the tree's PLATE.md")
         print()
+        print("  feedback ⟨file⟩ [--to ⟨vault⟩] [--origin ⟨name⟩] [--no-remove] [--skip-ci]")
+        print("      Move a client's feedback letter (FEEDBACK-<tool>.md) into the RVC vault")
+        print("      as a BUG-<n> issue; removes the source letter and prints the submitter's")
+        print("      dashboard line (tracked on the client plate via plate.source.<name>=).")
+        print("      --to         RVC vault to ingest into (default: feedback.to= in .rvc-root)")
+        print("      --origin     submitting project (default: derived from the file's vault)")
+        print("      --no-remove  keep the source letter after ingest")
+        print("      --skip-ci    disable [skip ci] in commit messages (default: enabled)")
+        print()
         print("  doctor [--fix]")
         print("      Audit the vault against its constitution (status:, priority vocabulary).")
         print("      --fix        strip status: and fold priorities in place")
@@ -410,6 +420,15 @@ def handle_create(args):
         epic=args.epic,
         skip_ci=args.skip_ci,
     )
+
+
+def handle_feedback(args):
+    if args.file in ("help", "--help", "-h"):
+        cmd_help("feedback")
+        return
+    vault = _require_vault(args.path)
+    cmd_feedback(vault, args.file, to=args.to, origin=args.origin,
+                 remove=not args.no_remove, skip_ci=args.skip_ci)
 
 
 def handle_search(args):
@@ -584,6 +603,18 @@ def build_parser():
     create_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
                           help="Disable [skip ci] in commit message (default: enabled)")
     create_p.set_defaults(handler=handle_create)
+
+    feedback_p = subparsers.add_parser("feedback", add_help=False)
+    feedback_p.add_argument("file", help="Path to the feedback letter (e.g. 00_INBOX/FEEDBACK-rvc.md)")
+    feedback_p.add_argument("--to", default=None,
+                            help="RVC vault to ingest into (default: `feedback.to=` in .rvc-root)")
+    feedback_p.add_argument("--origin", default=None,
+                            help="Submitting project name (default: derived from the file's vault)")
+    feedback_p.add_argument("--no-remove", action="store_true",
+                            help="Keep the source letter after ingest")
+    feedback_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
+                            help="Disable [skip ci] in commit message (default: enabled)")
+    feedback_p.set_defaults(handler=handle_feedback)
 
     search_p = subparsers.add_parser("search", add_help=False)
     search_p.add_argument("query", help="Search query")

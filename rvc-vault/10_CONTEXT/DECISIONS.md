@@ -130,3 +130,16 @@ live decision; compress superseded ones to one line pointing at the resolving co
   newvault vaults put new issues in `20_NEXT` instead of `00_INBOX` (tree law violation). Now
   `tree.get("create") or tree["triage"]`, with a dynamic hint (`triage` when the create bucket
   differs from triage, else `start`).
+## 2026-09-19 — big-pickle — external feedback = BUG-<n>, client alias is rendering (STORY-039 PoC)
+- **No parallel type.** Client feedback (`rvc feedback @<file>`) is ingested as a regular
+  `BUG-<n>` issue in the RVC vault — `bug` already gates into triage and plate with zero
+  registration. The letter's content becomes the body; `origin: <client>` frontmatter records
+  the submitter; the canonical `# <ID>: <title>` heading replaces the letter's own H1.
+- **One-letter alias is display-only.** The client's plate renders RVC bugs as `F-<n>`
+  (`plate.alias.<name>=F`) purely to signal provenance — "this is *our* feedback to rvc, not
+  our own bug". Ids on the RVC side stay `BUG-<n>`: "rendering, not a record".
+- **Derived lane, not an export.** `plate.source.<name>=<vault>` on the client's `.rvc-root`
+  points the plate at the external vault's tree; the lane shows IDs and counts only — no
+  content crosses the boundary. Lifecycle stays folder-owned on the RVC side.
+- **The letter travels.** Source file is removed after ingest (`git rm` + commit when tracked,
+  plain delete otherwise), with `--no-remove` as an escape hatch.

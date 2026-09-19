@@ -22,11 +22,12 @@ import rvc.context as _context
 import rvc.plate as _plate
 import rvc.doctor as _doctor
 import rvc.issues as _issues
+import rvc.feedback as _feedback
 import rvc.cli.commands as _commands
 import rvc.cli.install as _install
 from rvc.cli.main import main
 
-_SUBMODULES = (_core, _git, _context, _plate, _doctor, _issues, _commands, _install)
+_SUBMODULES = (_core, _git, _context, _plate, _doctor, _issues, _feedback, _commands, _install)
 
 # Populate module namespace with all public and private attributes from submodules
 for mod in _SUBMODULES:

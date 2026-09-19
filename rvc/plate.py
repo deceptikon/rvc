@@ -19,8 +19,16 @@ PLATE_ISSUE_TYPES = ("story", "epic", "bug", "task")
 
 
 def read_plate_config(vault_path):
-    """Return ({lowercase handle → canonical}, owner_canonical) from `.rvc-root`."""
+    """Return (aliases, owner, sources, source_aliases) from `.rvc-root`.
+
+    `sources` = {name: vault_path} from `plate.source.<name>=<path>` — external
+    vaults the plate adds a derived feedback lane for (IDs and counts only, no
+    content crosses). `source_aliases` = {name: prefix} from
+    `plate.alias.<name>=<alias>` — display aliases for external issue IDs
+    (BUG-14 shown as F-14 is "rendering, not a record").
+    """
     aliases, owner = {}, None
+    sources, source_aliases = {}, {}
     root_file = os.path.join(vault_path, ".rvc-root")
     if os.path.exists(root_file):
         with open(root_file, "r", errors="replace") as f:
@@ -33,9 +41,21 @@ def read_plate_config(vault_path):
                         key = handle.strip().lstrip("@").lower()
                         if key:
                             aliases[key] = canonical
+                elif line.startswith("plate.source."):
+                    spec = line[len("plate.source."):]
+                    name, _, path = spec.partition("=")
+                    name, path = name.strip(), path.strip()
+                    if name and path:
+                        sources[name] = path
+                elif line.startswith("plate.alias."):
+                    spec = line[len("plate.alias."):]
+                    name, _, alias = spec.partition("=")
+                    name, alias = name.strip(), alias.strip()
+                    if name and alias:
+                        source_aliases[name] = alias
                 elif line.startswith("plate.owner"):
                     owner = line.partition("=")[2].strip() or None
-    return aliases, owner
+    return aliases, owner, sources, source_aliases
 
 
 def resolve_alias(raw, aliases):
@@ -164,10 +184,38 @@ def get_recent_vault_commits(vault_path, count=5):
         return []
 
 
+def _external_bug_items(src_vault):
+    """All BUG-* items in an external vault as [{path, done}], or None if not a vault.
+
+    Folder position inside the external vault's own tree decides done vs pending
+    (folder owns state there too); nothing but IDs ever leaves the source vault.
+    """
+    if not os.path.isdir(src_vault):
+        return None
+    try:
+        src_tree = resolve_tree(src_vault)
+    except Exception:
+        return None
+    done_dirs = {src_tree.get(k) for k in ("done", "evict", "supersede") if src_tree.get(k)}
+    items = []
+    for root, dirs, files in os.walk(src_vault):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for fname in files:
+            if not (fname.startswith("BUG-") and fname.endswith(".md")):
+                continue
+            rel = os.path.relpath(root, src_vault).replace(os.sep, "/")
+            path = f"{rel}/{fname}" if rel != "." else fname
+            items.append({
+                "path": path,
+                "done": any(path.startswith(d + "/") for d in done_dirs),
+            })
+    return items
+
+
 def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, log_count=5, write=False):
     """Render the plate: seven lanes computed from folders, priorities and open ask boxes."""
     tree = resolve_tree(vault_path)
-    aliases, owner = read_plate_config(vault_path)
+    aliases, owner, sources, source_aliases = read_plate_config(vault_path)
     me = resolve_alias(as_alias, aliases) if as_alias else None
     today = today or dt.date.today()
 
@@ -246,6 +294,37 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
     lanes["owner"].sort(key=lambda s: s["path"])
     lanes["owes_turn"].sort(key=lambda s: s["path"])
 
+    # External feedback lanes: derived from other vaults' trees — IDs and counts
+    # only, no content crosses. A client vault configures
+    # `plate.source.<name>=<vault>` to see the feedback it filed against a tool,
+    # aliased for provenance (`plate.alias.<name>=F` renders BUG-14 as F-14).
+    external = []
+    for name, src_vault in sorted(sources.items()):
+        items = _external_bug_items(src_vault)
+        if items is None:
+            print(f"[RVC] Warning: plate.source.{name} is not a vault: "
+                  f"{src_vault}", file=sys.stderr)
+            continue
+        alias = source_aliases.get(name)
+        pending, done = [], 0
+        for item in items:
+            fname = item["path"].rsplit("/", 1)[-1]
+            m = re.match(r"^BUG-(\d+)", fname)
+            if not m:
+                continue
+            if item["done"]:
+                done += 1
+            else:
+                pending.append(f"{alias}-{m.group(1)}" if alias else fname.split(".md")[0])
+        pending.sort(key=lambda s: int(s.rsplit("-", 1)[1]))
+        external.append({
+            "name": name,
+            "vault": src_vault,
+            "pending": pending,
+            "done": done,
+            "total": done + len(pending),
+        })
+
     recent_commits = get_recent_vault_commits(vault_path, count=log_count)
 
     if fmt == "json":
@@ -262,6 +341,10 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                     for row in rows
                 ]
                 for key, rows in lanes.items()
+            },
+            "external": {
+                ext["name"]: {k: v for k, v in ext.items() if k != "name"}
+                for ext in external
             },
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -296,6 +379,13 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                 lines.append(f"  {row['name']}  type={row['type'] or '—'}")
             else:
                 lines.append(f"  {row['name']}  pri={row['priority'] or '—'}")
+
+    if external:
+        lines.append("\nEXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)")
+        for ext in external:
+            pending_txt = ", ".join(ext["pending"]) if ext["pending"] else "—"
+            lines.append(f"  {ext['name']}: pending: {pending_txt} | "
+                         f"done: {ext['done']} of {ext['total']}")
 
     if recent_commits:
         lines.append(f"\nRECENT ACTIVITY (last {len(recent_commits)} commits)")
