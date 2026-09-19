@@ -160,3 +160,13 @@ live decision; compress superseded ones to one line pointing at the resolving co
   config, plate lanes, `push=` and the automatic feedback config. No legacy/newvault dualism — one
   command, always the same structure; re-runs append missing files/lines and reuse the existing
   name, never overwriting.
+- **RVC itself adopts the new layout via marker relocation — data never moves (STORY-038).**
+  A stray `rvc init` at the RVC repo root minted a second `0-vault` and repointed the
+  AGENTS/CLAUDE/GEMINI/QWEN links at it. Instead of migrating `rvc-vault/*` (all wiring names
+  it: feedback auto-discovery `feedback.py` looks for the `rvc-vault/` sibling of the CLI,
+  TEAMFLOW links target `RVC/rvc-vault/...`), we relocated only the marker: `git mv`
+  `rvc-vault/.rvc-root` → `RVC/.rvc-root` (name stays `vault=rvc-vault`). The repo now matches
+  STORY-037 exactly — vault in a named subdir, single marker at the project root — and
+  resolution from root / inside the vault / subprojects is unchanged (verified). The empty
+  `0-vault` was deleted and the symlinks restored. Lesson: `cmd init` must refuse to scaffold a
+  second vault when a child owns an inner `.rvc-root`.

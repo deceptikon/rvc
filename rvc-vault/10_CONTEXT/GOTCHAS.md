@@ -62,3 +62,8 @@
   vanishes between runs. `_release_source` must recreate the letter's parent dir after the `git rm`
   (the buckets are vault structure, not git's to keep). This was the "vanishing TestProject/00_INBOX"
   mystery; reproduced in isolation with `git rm` + `git commit`.
+- **`resolve_tree` falls back to `LEGACY_TREE` for a markerless vault copy.** The context
+  benchmark copies the live vault to a scratch dir; with the marker relocated to the project
+  root, the bare copy lost its config and was graded against the legacy bucket map (recall
+  collapsed 80% → 54%). Scratches of new-layout vaults must carry the effective marker
+  (`marker_file(vault)` copied in as `.rvc-root`) to stay self-configured.

@@ -41,6 +41,13 @@ def _copy_live_vault():
         str(LIVE_VAULT), vault,
         ignore=shutil.ignore_patterns(
             ".obsidian", ".rvc-create.lock", rvc_cli.CONTEXT_CACHE_NAME))
+    marker = rvc_cli.marker_file(str(LIVE_VAULT))
+    if marker:
+        # Carry the vault's effective config so the copy is self-contained:
+        # since STORY-037 the marker lives at the project root, not in the
+        # vault — a bare dir copy would otherwise fall back to LEGACY_TREE
+        # and grade the ranker with the wrong bucket map.
+        shutil.copy2(marker, os.path.join(vault, ".rvc-root"))
     return vault
 
 

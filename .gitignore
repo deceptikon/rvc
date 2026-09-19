@@ -21,3 +21,8 @@ Thumbs.db
 # throwaway feedback sandbox
 /TestProject/
 /TestProject-rvc/
+
+# RVC + Obsidian volatile state
+.rvc-context-cache.sqlite
+.rvc-context-cache.sqlite-wal
+.rvc-context-cache.sqlite-shm

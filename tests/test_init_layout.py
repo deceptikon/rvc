@@ -20,6 +20,7 @@ import os
 import tempfile
 
 import helpers
+import helpers
 from helpers import make_vault, rvc_cli
 
 NEWVAULT_DIRS = {
@@ -108,6 +109,26 @@ def test_find_vault_root_descends_via_vault():
     vault = os.path.join(root, "0-vault")
     assert rvc_cli.find_vault_root(root) == vault
     assert rvc_cli.find_vault_root(os.path.join(vault, "20_NEXT")) == vault
+
+
+def test_init_refuses_second_vault_when_inner_vault_exists():
+    """A repo that already owns a vault via an inner self-referential marker
+    (legacy dogfooding layout: `rvc-vault/.rvc-root` → `vault=rvc-vault`) must
+    not get a second vault scaffolded beside it — no 0-vault, no root marker.
+    """
+    root = fresh_root()
+    inner = os.path.join(root, "rvc-vault")
+    os.makedirs(os.path.join(inner, "10_CONTEXT"))
+    with open(os.path.join(inner, ".rvc-root"), "w") as f:
+        f.write("vault=rvc-vault\n")
+        for verb, directory in sorted(helpers.NEWVAULT_TREE.items()):
+            f.write(f"tree.{verb}={directory}\n")
+
+    assert rvc_cli.cmd_init(root) == root
+    # no second vault, no root marker, inner vault untouched
+    assert not os.path.isdir(os.path.join(root, "0-vault"))
+    assert not os.path.isfile(os.path.join(root, ".rvc-root"))
+    assert os.path.isfile(os.path.join(root, "rvc-vault", ".rvc-root"))
 
 
 def test_find_vault_root_accepts_file_paths():

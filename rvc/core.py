@@ -447,6 +447,18 @@ def cmd_init(target_path=".", vault_name=None):
         if looks_like_vault:
             print(f"[RVC] {root} is already an RVC vault (flat marker, no vault name). Nothing to do.")
             return root
+    if not os.path.isfile(root_file):
+        # Legacy dogfooding repos own their vault as an inner dir with its own
+        # self-referential marker (e.g. `rvc-vault/.rvc-root` → `vault=rvc-vault`).
+        # Such a project already has a vault — never scaffold a second one beside it.
+        try:
+            for entry in sorted(os.listdir(root)):
+                child = os.path.join(root, entry)
+                if os.path.isdir(child) and os.path.isfile(os.path.join(child, ".rvc-root")):
+                    print(f"[RVC] {root} already owns a vault at {child} (inner .rvc-root). Nothing to do.")
+                    return root
+        except OSError:
+            pass
     if vault_name is None:
         vault_name = existing_name or _prompt_vault_name(DEFAULT_VAULT_NAME)
     if existing_name and vault_name != existing_name:
