@@ -16,19 +16,22 @@ one stable command, always the same result, no legacy/new logic.
 
 # Behavior (the contract)
 
-1. `rvc init` in a new project creates a `0-vault/` directory with the new (newvault)
-   structure in it: `00_INBOX 10_CONTEXT 20_NEXT 30_ACTIVE 40_DECIDE 50_DEFERRED 60_DONE
-   90_ARCHIVE .obsidian`, plus `10_CONTEXT/ROUTING.md`.
+1. `rvc init` in a new project asks for the vault directory name, **suggesting `0-vault`**
+   as the default (Enter = accept; typing renames). Non-interactive runs (no tty / scripts)
+   silently use `0-vault`; `--vault-name <name>` explicitly skips the prompt. The vault
+   gets the new (newvault) structure: `00_INBOX 10_CONTEXT 20_NEXT 30_ACTIVE 40_DECIDE
+   50_DEFERRED 60_DONE 90_ARCHIVE .obsidian`, plus `10_CONTEXT/ROUTING.md`.
 2. `.rvc-root` and `.gitignore` are handled **outside** the vault dir, at the project
    root:
-   - `.rvc-root`: `vault=0-vault` + the `tree.*` block (paths relative to the vault).
+   - `.rvc-root`: `vault=<name>` + the `tree.*` block (paths relative to the vault).
    - `.gitignore`: the RVC/Obsidian volatile-state lines (deep-matched).
-   - Project root also gets the AGENTS/CLAUDE/GEMINI/QWEN links → `0-vault/10_CONTEXT/ROUTING.md`
+   - Project root also gets the AGENTS/CLAUDE/GEMINI/QWEN links → `<vault>/10_CONTEXT/ROUTING.md`
      and a README.
-3. Re-running `rvc init` never overwrites: it appends missing files and missing
+3. Re-running `rvc init` never overwrites and never prompts again (the name is taken from
+   the existing marker): it appends missing files and missing
    `.gitignore`/`.rvc-root` lines only. Existing user content stays untouched.
 4. No `--tree legacy|newvault` flag anymore — init always produces the new structure.
-   `rvc project init` folds into the same behavior.
+   `rvc project init` folds into the same behavior (prompt + `--vault-name`).
 
 # Mechanics (resolution)
 
@@ -43,9 +46,10 @@ one stable command, always the same result, no legacy/new logic.
 
 # Acceptance criteria
 
-- AC1 — `rvc init <project>` creates `0-vault/` with the full new tree; marker + gitignore
-  at project root; AGENTS links + README at project root; nothing inside `0-vault/` except
-  the buckets/ROUTING.
+- AC1 — `rvc init <project>` prompts for the vault directory name (default `0-vault` via
+  Enter; `--vault-name` for scripts; silent default when not a tty); creates `<name>/`
+  with the full new tree; marker + gitignore at project root; AGENTS links + README at
+  project root; nothing inside the vault besides the buckets/ROUTING.
 - AC2 — second run is additive: identical tree, no duplicate gitignore/marker lines,
   existing ROUTING kept verbatim.
 - AC3 — from the project root and from inside `0-vault/`, `rvc plate`/`rvc issue list`
