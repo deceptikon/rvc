@@ -109,22 +109,18 @@ def cmd_help(subgroup=None):
         print("Note: the stdlib BM25 ranker indexes all .md files; archive buckets are")
         print("  indexed but never suggested, and the vault's knowledge dir ranks first.")
     elif subgroup == "project":
-        print("rvc project — initialize a project with a vault subdirectory")
+        print("rvc project — initialize a project vault; or print vault info")
         print()
         print("Usage:")
-        print("  rvc project init [⟨dir⟩] [--vault-name ⟨name⟩] [--tree legacy|newvault]")
+        print("  rvc project init [⟨dir⟩] [--vault-name ⟨NAME⟩]")
         print("  rvc project info [⟨dir⟩]")
         print()
         print("Arguments:")
-        print("  init           create a project with a vault subdirectory (not flat)")
-        print("    <dir>            target directory (default: current)")
-        print("    --vault-name     vault directory name (default: vault)")
-        print("    --tree           bucket layout preset: legacy | newvault (default: legacy)")
+        print("  init           same as 'rvc init' — vault subdirectory (0-vault, prompted)")
+        print("    <dir>            project directory (default: current)")
+        print("    --vault-name     vault directory name (skips the prompt)")
         print("  info           print vault info and ROADMAP.md contents if present")
         print("    <dir>            project directory (default: current)")
-        print()
-        print("Note: 'rvc init' creates a flat vault directly; 'rvc project init' wraps it")
-        print("  in a <vault-name>/ subdirectory. Use project init for multi-repo projects.")
     elif subgroup == "create":
         print("rvc create — create a new issue")
         print()
@@ -200,14 +196,18 @@ def cmd_help(subgroup=None):
         print("  --no-push    commit but do not push")
         print("  --push       commit and push (opt-in)")
     elif subgroup == "init":
-        print("rvc init — initialize a new flat vault")
+        print("rvc init — initialize a project vault (default name 0-vault)")
         print()
         print("Usage:")
-        print("  rvc init [⟨dir⟩] [--tree legacy|newvault]")
+        print("  rvc init [⟨dir⟩] [--vault-name ⟨NAME⟩]")
         print()
         print("Arguments:")
-        print("  ⟨dir⟩        target directory (default: current)")
-        print("  --tree       bucket layout preset (default: legacy)")
+        print("  ⟨dir⟩         project directory (default: current)")
+        print("  --vault-name  vault directory name (skips the prompt; default 0-vault)")
+        print()
+        print("Prompts for the vault name (Enter accepts 0-vault); the vault lives in")
+        print("  ⟨name⟩/ and .rvc-root + .gitignore sit at the project root. Re-runs")
+        print("  append missing files/lines and never overwrite.")
     elif subgroup == "install":
         print("rvc install — install rvc on PATH")
         print()
@@ -246,13 +246,13 @@ def cmd_help(subgroup=None):
         print()
         print("Commands:")
         print()
-        print("  init [⟨dir⟩] [--tree legacy|newvault]")
-        print("      Initialize a new flat vault (no vault/ subdirectory). Works without a vault.")
-        print("      ⟨dir⟩        target directory (default: .)")
-        print("      --tree       bucket layout preset (default: legacy)")
+        print("  init [⟨dir⟩] [--vault-name ⟨NAME⟩]")
+        print("      Initialize a project vault. Prompts for the vault dir name (default")
+        print("      0-vault; --vault-name skips the prompt). Marker + .gitignore at the")
+        print("      project root; vault lives in ⟨NAME⟩/. Idempotent on re-run.")
         print()
         print("  project")
-        print("      Initialize a project with a vault subdirectory; or print vault info.")
+        print("      Initialize a project vault (same as init) or print vault info.")
         print("      Subcommands: init, info — use 'rvc project help' for details.")
         print()
         print("  install [--dir ⟨dir⟩] [--force] [--check]")
@@ -485,7 +485,7 @@ def handle_git_commit_all(args):
 
 
 def handle_init(args):
-    cmd_init(args.target_path or ".", args.tree)
+    cmd_init(args.target_path or ".", args.vault_name)
 
 
 def handle_project(args):
@@ -493,7 +493,7 @@ def handle_project(args):
         cmd_help("project")
         return
     if args.action == "init":
-        cmd_project_init(args.target_path or ".", args.vault_name, args.tree)
+        cmd_project_init(args.target_path or ".", args.vault_name)
         return
     if args.action == "info":
         vault = _require_vault(args.path)
@@ -639,15 +639,14 @@ def build_parser():
     doctor_p.set_defaults(handler=handle_doctor)
 
     init_p = subparsers.add_parser("init", add_help=False)
-    init_p.add_argument("target_path", nargs="?", default=".", help="Directory to initialize")
-    init_p.add_argument("--tree", choices=["legacy", "newvault"], default="legacy")
+    init_p.add_argument("target_path", nargs="?", default=".", help="Project directory to initialize")
+    init_p.add_argument("--vault-name", default=None, help="Vault directory name (default: prompt, suggested 0-vault)")
     init_p.set_defaults(handler=handle_init)
 
     project_p = subparsers.add_parser("project", add_help=False)
     project_p.add_argument("action", choices=["init", "info", "help"])
     project_p.add_argument("target_path", nargs="?")
-    project_p.add_argument("--vault-name", default="vault")
-    project_p.add_argument("--tree", choices=["legacy", "newvault"], default="legacy")
+    project_p.add_argument("--vault-name", default=None)
     project_p.set_defaults(handler=handle_project)
 
     install_p = subparsers.add_parser("install", add_help=False)

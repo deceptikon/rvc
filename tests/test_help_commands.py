@@ -69,8 +69,8 @@ def test_help_lists_flags_with_defaults_one_per_line():
     assert "--stale-days overdue threshold in days (default: 7)" in out
     # install dir default
     assert "--dir        install directory (default: ~/.local/bin)" in out
-    # init tree default
-    assert "--tree       bucket layout preset (default: legacy)" in out
+    # init vault-name flag + the default-named vault dir
+    assert "--vault-name" in out and "0-vault" in out
 
 
 def test_issue_help_advertises_get_not_hidden_alias():
@@ -98,12 +98,13 @@ def test_list_help_says_it_is_an_alias():
 
 
 def test_init_vs_project_init_distinguished():
-    """AC5 (note 4): `init` (flat) vs `project init` (vault subdirectory)."""
+    """STORY-037: `init` and `project init` merged — named vault subdir (0-vault)."""
     top = help_output()
-    assert "flat vault (no vault/ subdirectory)" in top
+    assert "0-vault" in top
+    assert "--vault-name" in top
     proj = help_output("project")
-    assert "project with a vault subdirectory" in proj
-    assert "not flat" in proj
+    assert "0-vault" in proj
+    assert "same as 'rvc init'" in proj
 
 
 def test_rescan_vs_doctor_fix_scope_stated():

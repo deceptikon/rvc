@@ -52,9 +52,9 @@ def test_write_vault_gitignore_covers_context_cache():
 
 
 def test_cmd_init_provisions_vault_gitignore():
-    """End-to-end: a fresh `rvc init` leaves the lock rule in the vault."""
+    """End-to-end: a fresh `rvc init` leaves the lock rule at the project root."""
     root = tempfile.mkdtemp(prefix="rvc-init-")
-    rvc_cli.cmd_init(root, "newvault")
+    rvc_cli.cmd_init(root)
     content = open(os.path.join(root, ".gitignore")).read()
     assert ".rvc-create.lock" in content
     assert ".rvc-context-cache.json" in content

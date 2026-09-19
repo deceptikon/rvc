@@ -4,7 +4,7 @@ import os
 import sys
 import subprocess
 import configparser
-from rvc.core import run_cmd, find_git_root
+from rvc.core import run_cmd, find_git_root, marker_file
 
 
 def _git(git_root, *args, env=None):
@@ -44,7 +44,7 @@ def _push_enabled(vault_path):
     """Push is OPT-IN. Enabled only by env `RVC_PUSH=1` or `.rvc-root` line `push=true`."""
     if os.environ.get("RVC_PUSH", "").strip() == "1":
         return True
-    root_file = os.path.join(vault_path, ".rvc-root")
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
     if os.path.exists(root_file):
         with open(root_file, "r", errors="replace") as f:
             for line in f:

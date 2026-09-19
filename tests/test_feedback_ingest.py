@@ -176,3 +176,46 @@ def test_feedback_self_ingest_does_not_self_configure():
     assert after == before, "self-ingest must not touch .rvc-root"
     assert os.path.exists(
         os.path.join(target, "00_INBOX", "BUG-01-FEEDBACK-rvc.md"))
+
+
+def test_feedback_without_origin_uses_project_name():
+    """Origin auto-derives from the submitter's PROJECT (marker root) — a new-
+    layout client labels itself 'client', not '0-vault'; and handing the letter
+    FILE to find_vault_root never crashes (regression for the nested-project
+    NotADirectoryError)."""
+    root = tempfile.mkdtemp(prefix="rvc-fb-nested-")
+    project = os.path.join(root, "client")
+    rvc_cli.cmd_init(project)
+    vault = os.path.join(project, "0-vault")
+    _, target = make_vault()
+    letter = _write_letter(vault)
+
+    rvc_cli.cmd_feedback(vault, letter, to=target, origin=None)
+
+    created = os.path.join(target, "00_INBOX", "BUG-01-FEEDBACK-rvc.md")
+    assert os.path.exists(created)
+    fm = read_frontmatter(created)
+    assert fm["origin"] == "client", \
+        f"origin should be the project name, got {fm['origin']!r}"
+
+
+def test_feedback_keeps_bucket_dir_after_git_handoff():
+    """STORY-036 reg.: `git rm` (git >= 2.55) prunes now-empty parent dirs —
+    the client's 00_INBOX bucket must survive a tracked handoff."""
+    root = tempfile.mkdtemp(prefix="rvc-fb-git-")
+    vault = _make_vault_at(os.path.join(root, "vault"))
+    rvc_cli.run_cmd("git init -q", cwd=root)
+    rvc_cli.run_cmd("git add -A && git commit -qm init", cwd=root)
+    _, target = make_vault()
+    letter = _write_letter(vault)
+    rvc_cli.run_cmd("git add -A && git commit -qm letter", cwd=root)
+
+    rvc_cli.cmd_feedback(vault, letter, to=target, origin="adlai")
+
+    assert not os.path.exists(letter), "letter must travel"
+    assert os.path.isdir(os.path.join(vault, "00_INBOX")), \
+        "bucket dir pruned by `git rm` — the handoff must recreate it"
+    rc, out, _ = rvc_cli.run_cmd("git log --oneline -1", cwd=root)
+    assert rc == 0 and "handoff" in out, "client-side handoff commit missing"
+    assert os.path.exists(
+        os.path.join(target, "00_INBOX", "BUG-01-FEEDBACK-rvc.md"))

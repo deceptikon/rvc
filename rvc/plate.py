@@ -7,7 +7,7 @@ import json
 import datetime as dt
 import subprocess
 
-from rvc.core import resolve_tree, tree_dirs, find_file_by_id
+from rvc.core import resolve_tree, tree_dirs, find_file_by_id, marker_file
 
 PLATE_ASK_LINE_RE = re.compile(r"^\s*-\s*\[ \]\s*(.*)$")
 PLATE_HANDLE_RE = re.compile(r"@([\w.+-]+)")
@@ -29,7 +29,7 @@ def read_plate_config(vault_path):
     """
     aliases, owner = {}, None
     sources, source_aliases = {}, {}
-    root_file = os.path.join(vault_path, ".rvc-root")
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
     if os.path.exists(root_file):
         with open(root_file, "r", errors="replace") as f:
             for line in f:

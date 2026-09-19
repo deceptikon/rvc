@@ -18,8 +18,8 @@ import re
 import sys
 
 from rvc.core import (
-    find_git_root, find_vault_root, resolve_tree, _next_id,
-    vault_create_lock, run_cmd,
+    find_git_root, find_vault_root, find_marker_dir, marker_file, _ref_vault_dir,
+    resolve_tree, _next_id, vault_create_lock, run_cmd,
 )
 from rvc.git import sync_after, is_tracked
 from rvc.issues import _sanitize_filename
@@ -56,7 +56,7 @@ def _feedback_target(vault_path, explicit, cli_root=None):
     """
     if explicit:
         return os.path.abspath(explicit)
-    root_file = os.path.join(vault_path, ".rvc-root")
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
     if os.path.exists(root_file):
         with open(root_file, "r", errors="replace") as f:
             for line in f:
@@ -92,7 +92,8 @@ def _ensure_feedback_config(client_vault, target, name="rvc", alias="F"):
     """
     if os.path.abspath(client_vault) == os.path.abspath(target):
         return []
-    root_file = os.path.join(client_vault, ".rvc-root")
+    marker_dir = find_marker_dir(client_vault) or client_vault
+    root_file = os.path.join(marker_dir, ".rvc-root")
     present = set()
     if os.path.exists(root_file):
         with open(root_file, "r", errors="replace") as f:
@@ -164,6 +165,12 @@ def _release_source(src, issue_id, origin):
     rc, _, err = run_cmd(f"git rm -q -- '{src}'", cwd=git_root)
     if rc != 0:
         return f"Warning: could not `git rm` {rel}: {err.strip()} — remove it by hand."
+    # `git rm` (git 2.55+) prunes now-empty parent directories from the working
+    # tree; the client's bucket (00_INBOX etc.) is vault structure and must
+    # survive the handoff, so recreate it when git swept it away.
+    parent = os.path.dirname(src)
+    if not os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
     rc, _, err = run_cmd(
         f"git commit -qm 'handoff: {os.path.basename(src)} -> RVC {issue_id} ({origin}) [skip ci]'",
         cwd=git_root)
@@ -201,10 +208,21 @@ def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=
     if not os.path.isdir(target):
         print(f"Error: feedback target is not a directory: {target}")
         sys.exit(1)
+    # STORY-037: the target may be a project root whose vault lives in a named
+    # subdirectory (`vault=<name>` in the project-root marker); descend into the
+    # real vault so ingest lands in its buckets. Bare targets with no marker
+    # stay as given (a later open() surfaces the missing-directory error).
+    target = _ref_vault_dir(os.path.abspath(target))
 
     if not origin:
-        src_root = find_vault_root(src)
-        origin = os.path.basename(src_root) if src_root else "external"
+        src_root = find_vault_root(os.path.dirname(src))
+        if src_root:
+            # new-layout vaults live in a named subdir; label the submitter with
+            # the PROJECT (marker-root) name, not the generic bucket dir name.
+            marker_dir = find_marker_dir(src_root) or src_root
+            origin = os.path.basename(marker_dir)
+        else:
+            origin = "external"
 
     title = _feedback_title(text) or f"Feedback from {origin}"
     today = datetime.date.today().isoformat()
@@ -263,11 +281,12 @@ def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=
     if removal:
         print(f"[RVC] {removal}")
     if os.path.abspath(vault_path) != os.path.abspath(target):
+        cfg_root = os.path.join(find_marker_dir(vault_path) or vault_path, ".rvc-root")
         if configured:
-            print(f"[RVC] Auto-configured this vault's plate in {os.path.join(vault_path, '.rvc-root')}:")
+            print(f"[RVC] Auto-configured this vault's plate in {cfg_root}:")
             for text in configured:
                 print(f"      {text}")
         else:
-            print(f"[RVC] Feedback lane already configured ({os.path.join(vault_path, '.rvc-root')}).")
+            print(f"[RVC] Feedback lane already configured ({cfg_root}).")
     print(f"RVC BUGS — pending: {', '.join(pending) or '—'} | done: {done} of {done + len(pending)}")
     return filepath

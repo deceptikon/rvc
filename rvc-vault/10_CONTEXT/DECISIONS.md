@@ -150,3 +150,13 @@ live decision; compress superseded ones to one line pointing at the resolving co
   client's `feedback.to=` / `plate.source.<name>=` / `plate.alias.<name>=` idempotently
   (user values win; a vault never configures itself). Validated in a throwaway TestProject
   sandbox before any live-vault rollout.
+- **Init lays the vault in a named subdir (`0-vault`), marker/gitignore at the project root (STORY-037).**
+  `rvc init` asks for the vault name (suggesting `0-vault`; `--vault-name` for scripts, silent
+  default when not a tty). The vault holds only the tree buckets + ROUTING; `.rvc-root`
+  (`vault=<name>` + `tree.*`) and `.gitignore` live outside it. Resolution: `find_vault_root`
+  descends via `vault=` only when that child exists AND has no marker of its own (self-referential
+  inner markers like `vault=rvc-vault` and old flat markers stay put); `find_marker_dir(vault_path)`
+  returns the single authoritative marker (the vault's own, else the project root) used by tree
+  config, plate lanes, `push=` and the automatic feedback config. No legacy/newvault dualism — one
+  command, always the same structure; re-runs append missing files/lines and reuse the existing
+  name, never overwriting.

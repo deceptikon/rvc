@@ -24,19 +24,26 @@ rvc --path ⟨path⟩ ⟨command⟩ …
 ### `rvc init`
 
 ```
-rvc init [⟨dir⟩] [--tree legacy|newvault]
+rvc init [⟨dir⟩] [--vault-name ⟨NAME⟩]
 ```
-Initialize a new flat vault (no `vault/` subdirectory) at `⟨dir⟩` (default `.`).
-`--tree` selects the bucket layout preset (default `legacy`).
+Initialize a project vault at `⟨dir⟩` (default `.`). Prompts for the vault directory
+name, suggesting `0-vault` (Enter accepts; `--vault-name` skips the prompt for
+scripts; non-tty runs silently use `0-vault`). The vault gets the new structure
+(`00_INBOX 10_CONTEXT 20_NEXT 30_ACTIVE 40_DECIDE 50_DEFERRED 60_DONE 90_ARCHIVE
+.obsidian`) plus `10_CONTEXT/ROUTING.md`. `.rvc-root` (`vault=<name>` + `tree.*`) and
+`.gitignore` are handled at the **project root**, outside the vault. Re-runs never
+overwrite — they append missing files and marker/gitignore lines and reuse the
+existing vault name (no re-prompt). No `--tree` dualism: init always produces this
+structure.
 
 ### `rvc project`
 
 ```
-rvc project init [⟨dir⟩] [--vault-name ⟨name⟩] [--tree legacy|newvault]
+rvc project init [⟨dir⟩] [--vault-name ⟨NAME⟩]
 rvc project info [⟨dir⟩]
 ```
-- `project init` — initialize a project with a `⟨vault-name⟩/` subdirectory (default
-  `vault`) and the chosen tree preset.
+- `project init` — same behavior as `rvc init` (compatibility alias; vault subdirectory,
+  default name `0-vault`, prompted).
 - `project info` — print vault info and the contents of `ROADMAP.md` if present.
 
 ### `rvc install`
@@ -187,9 +194,10 @@ them, not re-litigate them.
 3. **`issue ⟨ID⟩ ⟨action⟩` vs `issue list`** — the overloaded first positional is
    resolved by rule 1: only `list` and ID+action remain, and help states the parse
    explicitly.
-4. **`project init` vs `init`** — both keep. `init` makes a flat vault; `project
-   init` makes a project with a vault subdirectory. Help distinguishes them
-   explicitly instead of saying "initialize" for both.
+4. **`project init` vs `init`** — merged (STORY-037). `rvc init` makes a project with a
+   named vault subdirectory (default `0-vault`, prompted); `project init` is a
+   compatibility alias for the same behavior. The old flat-vault init and the
+   legacy/newvault `--tree` dualism are gone.
 5. **`rescan` vs `doctor --fix`** — both keep; distinct scope. `doctor --fix` is
    surgical (status/priority only, constitution repair), `rescan` is broad
    (tag/wikilink/frontmatter normalization). Help warns `rescan` is the broader

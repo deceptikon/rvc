@@ -57,4 +57,8 @@
   `git diff --cached` afterwards.
 - **`rvc plate --write` regenerates PLATE.md from the tree.** The file at `tree.roadmap/PLATE.md`
   (`10_CONTEXT/PLATE.md` on newvault) is a rendering, not a record — refresh it after transitions;
-  hand-editing it is the one thing the constitution forbids.
+  hand-editing it is the one thing the constitution forbids.- **`git rm` (git >= 2.55) prunes now-empty parent directories.** Removing a tracked feedback
+  letter with `git rm` sweeps its empty bucket (`00_INBOX/`) off the client disk — the directory
+  vanishes between runs. `_release_source` must recreate the letter's parent dir after the `git rm`
+  (the buckets are vault structure, not git's to keep). This was the "vanishing TestProject/00_INBOX"
+  mystery; reproduced in isolation with `git rm` + `git commit`.
