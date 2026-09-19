@@ -7,7 +7,7 @@ same verbs — records the submitter in frontmatter (`origin:`), removes the
 source letter on the client side, and prints the submitter's dashboard line.
 
 BUG- is deliberately NOT a parallel type: `bug` already gates into triage and
-plate with zero registration (STORY-039 PoC). Any display alias (a client shows
+plate with zero registration (STORY-036). Any display alias (a client shows
 `BUG-14` as `F-14`) is a rendering concern owned by the plate lane
 (`plate.alias.<name>=F`), never the record.
 """

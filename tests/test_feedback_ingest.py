@@ -4,7 +4,7 @@
 The letter travels: content lands in the target vault (type: bug, origin:
 <client>), the source is removed, and the command prints the submitter's
 dashboard line. BUG- is not a parallel type — `bug` already flows through
-triage and plate with zero registration (STORY-039 PoC).
+triage and plate with zero registration (STORY-036).
 """
 
 import os

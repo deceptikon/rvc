@@ -4,7 +4,7 @@
 `plate.source.<name>=<vault>` + `plate.alias.<name>=F` in the client's
 .rvc-root yield a `rvc: pending: F-01 | done: 1 of 2` lane — IDs and counts
 only, zero content crosses the boundary. The F-alias is "rendering, not a
-record" (STORY-039 PoC).
+record" (STORY-036).
 """
 
 import os
