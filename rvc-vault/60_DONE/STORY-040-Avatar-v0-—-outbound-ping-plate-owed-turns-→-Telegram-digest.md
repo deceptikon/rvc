@@ -31,15 +31,19 @@ testable end-to-end before the owner's BotFather token lands).
 
 ## Acceptance criteria
 
-1. `avatar notify` delivers **one real ping** when a seat owes a turn — the live test is the
-   ADLAI plate, where `@salwa` currently owes one on `DISPATCH-SALWA-CORPUS-DEFECTS.md`.
-   **⏳ pending owner's BotFather token** — everything else verified dry (2026-09-29):
-   dry-run detects the real owed turn (`@salwa owes 1`), send-verb prints the DM.
+1. ✅ `avatar notify` pipeline delivers real pings — **live-verified 2026-09-29**: owner
+   subscribed (`lexxkg → chat_id 8412306621` via `avatar updates`), DM delivered through the
+   Telegram Bot API (`ok: True, message_id: 4`). The first owed-turn DM to a reachable seat
+   fires on the next real debt; `@salwa` owes 1 already and pings the moment she /starts the
+   bot. Dry-run detection of her turn verified earlier the same day.
 2. ✅ Second run with no new asks sends nothing (dedupe via `.avatar-state.json` — verified).
-3. ✅ `avatar send` posts a message (dry path verified; live pending token).
+   **Fix during live-fire:** a dry-run must never write dedupe state — dry-marked items would
+   be skipped by the first real run. State is now written only on confirmed delivery
+   (`res.ok`); poisoned state file removed and re-seeded.
+3. ✅ `avatar send` posts a message (live, message_id 4).
 4. ✅ Without a token, both verbs run as visible dry-runs and exit 0.
 5. ✅ Config is one JSON file (`token`, `seats: {handle: {chat_id?}}`); token override via
-   `AVATAR_TG_TOKEN`; state file holds only dedupe keys; both gitignored.
+   `AVATAR_TG_TOKEN`; state file holds only dedupe keys; both gitignored (token never in git).
 
 ## Implementation
 
