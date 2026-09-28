@@ -7,6 +7,7 @@ epic: [[EPIC-001]]
 domain: workflow_meta
 domain_tags: [ask, owed, plate, feedback, protocol]
 imported-from: "ADLAI session 2026-09-29 (forensics on the v5.3→v6.0 arena deletion); relates to STORY-024, STORY-025, STORY-030"
+correction: "2026-09-29 — first draft wrongly proposed minting `rvc feedback`; that command already exists as the client→owner INGEST (rvc/feedback.py). Rescoped: ask/answer own the seat→seat direction; feedback owns the client→tool-owner direction."
 started: 2026-09-29
 ---
 
@@ -47,6 +48,23 @@ answering costs one command.** Nobody — human or tired agent — should ever h
 a question block, or a grammar-conformant ask line. Grammar that must be *learned* will be
 *avoided*. Grammar that is *generated* just becomes the file format.
 
+## Relationship to the existing channels
+
+Two directions, two mechanisms — this story owns only the first:
+
+- **Client → tool-owner (exists):** `rvc feedback ⟨file⟩` ingests a client vault's
+  `FEEDBACK-<tool>.md` into this vault as a `BUG-<n>` issue, records `origin:`, removes the source
+  letter, and the client plate renders what it filed via `plate.source.<name>=`. Design precedents
+  to reuse: the tool auto-discovers its own vault next to the CLI, and auto-writes
+  `feedback.to=`/`plate.source.*=` memory on first use — the same "the tool emits the formal part"
+  philosophy this story applies to asks. **Note:** ADLAI's `.rvc-root` carries neither
+  `feedback.to=` nor `plate.source.rvc=` — the ingest has never actually run from there; its four
+  inbox letters are all in the pre-ingest state. Wiring that is one `--to` call, not this story.
+- **Seat → seat inside a vault (missing — this story):** nothing lets `@deceptikon` owe `@qwen` a
+  verdict, or `@salwa` (a human with no vault) owe anyone anything, in a shape the plate can count.
+  `owed_by` on a blocked issue is that shape. STORY-030's general `rvc report` remains the
+  vault→vault generalization; ask-to-no-vault-seat is the edge neither covers yet.
+
 ## Scope
 
 1. **`rvc ask @<handle> "<question>" [--default <text>] [--by <YYYY-MM-DD>]`** mints one file in
@@ -67,10 +85,6 @@ a question block, or a grammar-conformant ask line. Grammar that must be *learne
    actually reads (GitLab issue, chat). The vault tracks the obligation; delivery to a non-vault
    human is explicitly out of scope here — note it as the natural extension of STORY-030's
    `rvc report`, which covers vault→vault only.
-5. **`rvc feedback "<text>" [--tool <name>]`** — the "Feedback Ritual" that vault constitutions
-   describe as a manual convention, as a command: mints `FEEDBACK-<slug>.md` in `tree.create` with
-   `type: feedback` frontmatter, so inbox items stop rendering as `type=—` and feedback stops
-   depending on every agent remembering the file-naming folklore.
 
 ## Acceptance criteria
 
@@ -81,8 +95,7 @@ a question block, or a grammar-conformant ask line. Grammar that must be *learne
 3. `rvc answer` appends a dated author-tagged section and transitions the file; lane empties.
 4. Non-vault seats: ask mints + a copy-pasteable message artifact is produced; the item stays owed
    until answered.
-5. `rvc feedback` mints a `type: feedback` file in the inbox bucket.
-6. **The ADLAI regression becomes a fixture:** mint → plate lane populated → answer → lane empty.
+5. **The ADLAI regression becomes a fixture:** mint → plate lane populated → answer → lane empty.
    Four forever-zero lanes on a vault with live external dependencies must be impossible to ship.
 
 ## Must not
@@ -91,5 +104,6 @@ a question block, or a grammar-conformant ask line. Grammar that must be *learne
   story only *generates* conformant files.
 - Add a state field beyond `owed_by` (+ optional `by:`). Folder-as-state stays law; `owed_by` is a
   fact about the file, not a state flip.
-- Build a delivery daemon or duplicate STORY-030's cross-vault mechanics.
+- Build a delivery daemon or duplicate STORY-030's cross-vault mechanics, or touch `rvc feedback`'s
+  ingest direction — the client→owner channel exists and works as designed.
 - Put lane semantics in a vault constitution — STORY-024's spec is their only home.
