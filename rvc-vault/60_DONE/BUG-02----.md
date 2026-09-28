@@ -66,3 +66,7 @@ outcomes because it looks like data.
 plus a numbered AC and one `- [ ]` bullet) render as `open=1 done=7`, understating the story by two
 thirds while it sits in a WIP-cap-2 lane.
 
+
+## Fix (2026-09-29)
+
+Option (1) from this letter, as recommended: both counter regexes widened to `[-*]` and `N.` markers (`rvc/plate.py`). Dash and numbered ACs both count now; no vault churn. Regression: `tests/test_bugfixes_02_03_04.py::test_plate_counts_numbered_boxes`.
