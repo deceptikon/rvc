@@ -173,7 +173,10 @@ def test_feedback_self_ingest_does_not_self_configure():
     rvc_cli.cmd_feedback(target, letter, origin="rvc", cli_root=root)
 
     after = _config_lines(target)
-    assert after == before, "self-ingest must not touch .rvc-root"
+    # BUG-04: a mint-floor line (mint.BUG=) is the tool's id memory and is
+    # allowed; what self-ingest must never write is its own feedback lane.
+    added = [l for l in after if l not in before]
+    assert not [l for l in added if l.startswith(("feedback.", "plate."))], added
     assert os.path.exists(
         os.path.join(target, "00_INBOX", "BUG-01-FEEDBACK-rvc.md"))
 

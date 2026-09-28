@@ -146,8 +146,8 @@ def plate_surface(fpath, vault_path, aliases):
         "priority": fields.get("priority", ""),
         "is_issue": type_name in PLATE_ISSUE_TYPES or name.startswith(("STORY-", "EPIC-")),
         "asks": plate_asks(text, aliases),
-        "open_boxes": len(re.findall(r"^\s*-\s*\[ \]", text, re.M)),
-        "done_boxes": len(re.findall(r"^\s*-\s*\[[xX]\]", text, re.M)),
+        "open_boxes": len(re.findall(r"^\s*(?:[-*]|\d+\.)\s*\[ \]", text, re.M)),
+        "done_boxes": len(re.findall(r"^\s*(?:[-*]|\d+\.)\s*\[[xX]\]", text, re.M)),
         "last": plate_last_activity(text, fields),
         "last_speaker": headers[-1][0].strip() if headers else "",
     }

@@ -586,7 +586,8 @@ def build_parser():
 
     create_p = subparsers.add_parser("create", add_help=False)
     create_p.add_argument("title", help="Issue title")
-    create_p.add_argument("--prefix", default="STORY", help="ID prefix (default: STORY)")
+    create_p.add_argument("--prefix", default=None,
+                          help="ID prefix (default: derived from --type: bug→BUG, epic→EPIC, else STORY)")
     create_p.add_argument("--type", default="story", dest="issue_type",
                           choices=["story", "bug", "task", "epic"],
                           help="Issue type (default: story)")

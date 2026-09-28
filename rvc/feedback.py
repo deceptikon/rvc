@@ -19,7 +19,7 @@ import sys
 
 from rvc.core import (
     find_git_root, find_vault_root, find_marker_dir, marker_file, _ref_vault_dir,
-    resolve_tree, _next_id, vault_create_lock, run_cmd,
+    resolve_tree, _next_id, bump_mint_floor, vault_create_lock, run_cmd,
 )
 from rvc.git import sync_after, is_tracked
 from rvc.issues import _sanitize_filename
@@ -230,6 +230,7 @@ def cmd_feedback(vault_path, source, to=None, origin=None, remove=True, skip_ci=
     try:
         with vault_create_lock(target):
             issue_id = _next_id(target, "BUG")
+            bump_mint_floor(target, "BUG", int(issue_id.split("-", 1)[1]))  # BUG-04
             filename = f"{issue_id}-{_sanitize_filename(title)}.md"
             directory = resolve_tree(target).get("create") or "00_INBOX"
             filepath = os.path.join(target, directory, filename)

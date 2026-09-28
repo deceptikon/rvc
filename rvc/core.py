@@ -646,7 +646,7 @@ def vault_create_lock(vault_path):
 
 
 def _next_id(vault_path, prefix="STORY"):
-    max_num = 0
+    max_num = mint_floor(vault_path, prefix)
     width = 2
     tree = resolve_tree(vault_path)
     for d in tree_dirs(tree):
@@ -659,9 +659,60 @@ def _next_id(vault_path, prefix="STORY"):
                 if m:
                     digits = m.group(1)
                     num = int(digits)
+                    # Width follows the vault's own zero-padding on ANY match —
+                    # the floor can exceed every on-disk number (BUG-04) and
+                    # must not silently narrow the format.
+                    width = max(width, len(digits))
                     if num > max_num:
                         max_num = num
-                        width = len(digits)
-                    elif num == max_num:
-                        width = max(width, len(digits))
     return f"{prefix}-{str(max_num + 1).zfill(width)}"
+
+
+def mint_floor(vault_path, prefix):
+    """Highest number ever minted for `prefix` (high-water mark, BUG-04).
+
+    Ids are permanent, but max-on-disk forgets: a file renamed across prefixes
+    (STORY-040 -> EPIC-004 at birth) frees its number and the next mint would
+    reuse it. The floor lives in the marker file (`mint.<PREFIX>=<n>`) — the
+    tool's own memory, same pattern as `feedback.to=`.
+    """
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    try:
+        with open(root_file, "r", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(f"mint.{prefix}="):
+                    try:
+                        return int(line[len(f"mint.{prefix}="):].strip())
+                    except ValueError:
+                        continue
+    except OSError:
+        pass
+    return 0
+
+
+def bump_mint_floor(vault_path, prefix, num):
+    """Raise the prefix's mint floor to `num`; returns the marker path or None."""
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    if mint_floor(vault_path, prefix) >= num:
+        return None
+    key = f"mint.{prefix}="
+    lines = []
+    try:
+        with open(root_file, "r", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    replaced = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith(key):
+            lines[i] = f"{key}{num}"
+            replaced = True
+            break
+    if not replaced:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"{key}{num}")
+    with open(root_file, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return root_file

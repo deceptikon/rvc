@@ -1,13 +1,15 @@
 """Issue lifecycle operations: creation, transitions, querying, and retrieval."""
 
 import os
+import shlex
 import sys
 import re
 import datetime
 
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, state_label, run_cmd, find_git_root,
-    find_file_by_id, vault_create_lock, _next_id, LEGACY_PRIORITY_TO_P, STATUS_ALIAS
+    find_file_by_id, vault_create_lock, _next_id, bump_mint_floor,
+    LEGACY_PRIORITY_TO_P, STATUS_ALIAS
 )
 from rvc.git import sync_before, sync_after, is_tracked
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
@@ -86,14 +88,15 @@ def cmd_issue_action(vault_path, issue_id, action, skip_ci=True):
             print(f"[RVC] {os.path.basename(file_path)} is untracked — "
                   "plain move (no `git mv`).")
         elif git_root:
-            rc, _, err = run_cmd(f"git mv '{file_path}' '{new_file_path}'", cwd=git_root)
+            rc, _, err = run_cmd(
+                f"git mv {shlex.quote(file_path)} {shlex.quote(new_file_path)}", cwd=git_root)
             if rc == 0:
                 moved = True
             else:
                 print(f"[RVC] git mv failed ({err.strip()}); falling back to plain move.")
         if not moved:
             if git_root and src_tracked:
-                run_cmd(f"git rm -f '{file_path}'", cwd=git_root)
+                run_cmd(f"git rm -f {shlex.quote(file_path)}", cwd=git_root)
             os.rename(file_path, new_file_path)
 
     label = state_label(new_file_path, vault_path)
@@ -158,10 +161,14 @@ def _sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name).strip().replace(" ", "-")
 
 
-def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
+def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
                      priority="Medium", body="", directory=None,
                      epic="", extra_frontmatter=None, skip_ci=True):
     """Create a new issue file with proper frontmatter."""
+    if prefix is None:
+        # BUG-04: the id prefix follows the type (bug -> BUG, epic -> EPIC),
+        # unless the caller pinned one explicitly via --prefix.
+        prefix = {"bug": "BUG", "epic": "EPIC"}.get((issue_type or "story").lower(), "STORY")
     tree = resolve_tree(vault_path)
     if "block" in tree and priority in LEGACY_PRIORITY_TO_P:
         translated = LEGACY_PRIORITY_TO_P[priority]
@@ -184,9 +191,15 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
     if not os.path.exists(target_dir):
         os.makedirs(target_dir, exist_ok=True)
 
+    mint_marker = None
+
     try:
         with vault_create_lock(vault_path):
             issue_id = _next_id(vault_path, prefix)
+            # BUG-04: raise the prefix's high-water mark so a later rename
+            # across prefixes can never free this number for reuse.
+            num = int(issue_id.split("-", 1)[1])
+            mint_marker = bump_mint_floor(vault_path, prefix, num)
             safe_title = _sanitize_filename(title)
             filename = f"{issue_id}-{safe_title}.md"
             filepath = os.path.join(target_dir, filename)
@@ -255,7 +268,10 @@ def cmd_create_issue(vault_path, title, prefix="STORY", issue_type="story",
                                and create_bucket != tree.get("triage")) else "start"
     print(f"      Hint: rvc issue {issue_id} {hint_action}")
     
-    sync_after(vault_path, [filepath], f"rvc: Created issue {issue_id}: {title}", skip_ci=skip_ci)
+    paths = [filepath]
+    if mint_marker and os.path.abspath(mint_marker) != os.path.abspath(filepath):
+        paths.append(mint_marker)
+    sync_after(vault_path, paths, f"rvc: Created issue {issue_id}: {title}", skip_ci=skip_ci)
     
     return filepath
 
