@@ -33,11 +33,22 @@ testable end-to-end before the owner's BotFather token lands).
 
 1. `avatar notify` delivers **one real ping** when a seat owes a turn — the live test is the
    ADLAI plate, where `@salwa` currently owes one on `DISPATCH-SALWA-CORPUS-DEFECTS.md`.
-2. Second run with no new asks sends nothing (dedupe works).
-3. `avatar send` posts an arbitrary message to the group.
-4. Without a token, both verbs run as visible dry-runs and exit 0.
-5. Config is one JSON file (`token`, `group_chat_id`, `seats: {handle: {chat_id?}}`); token
-   override via `ARENA_TG_TOKEN` env; state file holds only dedupe keys.
+   **⏳ pending owner's BotFather token** — everything else verified dry (2026-09-29):
+   dry-run detects the real owed turn (`@salwa owes 1`), send-verb prints the DM.
+2. ✅ Second run with no new asks sends nothing (dedupe via `.avatar-state.json` — verified).
+3. ✅ `avatar send` posts a message (dry path verified; live pending token).
+4. ✅ Without a token, both verbs run as visible dry-runs and exit 0.
+5. ✅ Config is one JSON file (`token`, `seats: {handle: {chat_id?}}`); token override via
+   `AVATAR_TG_TOKEN`; state file holds only dedupe keys; both gitignored.
+
+## Implementation
+
+- `avatar/avatar.py` — stdlib only (`urllib`, `json`, `subprocess`); reads the plate through the
+  `rvc plate --as <handle> --format json` CLI surface, never rvc internals.
+- Personal channel per owner's call (2026-09-29): no group yet — the bot DMs seats; `avatar
+  updates` bootstraps chat_ids from whoever /starts the bot. Group/dev–dev talks = later stories.
+- A seat without a chat_id is reported (`@salwa owes 1 but has no chat_id`) — never silently
+  dropped; an unplugged sensor is the bug class, not a state.
 
 ## Explicitly NOT in this story
 
