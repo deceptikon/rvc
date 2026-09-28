@@ -113,12 +113,16 @@ def cmd_notify(cfg, vault, force=False):
         lines += [f"• {os.path.basename(p)}" + (f" — {a}" if a else "") for p, a in fresh]
         chat = seat.get("chat_id")
         if chat:
-            tg(cfg, "sendMessage", chat_id=chat, text="\n".join(lines))
+            res = tg(cfg, "sendMessage", chat_id=chat, text="\n".join(lines))
         else:
+            res = None
             print(f"[skip] @{handle.lstrip('@')} owes {len(fresh)} but has no chat_id yet "
                   f"(they must /start the bot; then `avatar updates`)")
-        for p, a in fresh:
-            state["sent"][f"{handle}|{p}|{a}"] = today
+        # Only delivered messages count as sent — a dry-run must never poison
+        # the dedupe state, or the first real run skips the real ping.
+        if res and res.get("ok"):
+            for p, a in fresh:
+                state["sent"][f"{handle}|{p}|{a}"] = today
     with open(STATE_PATH, "w") as f:
         json.dump(state, f, indent=1)
 
