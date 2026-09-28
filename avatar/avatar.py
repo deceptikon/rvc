@@ -127,6 +127,37 @@ def cmd_notify(cfg, vault, force=False):
         json.dump(state, f, indent=1)
 
 
+HOOK_MARKER = "# avatar:"
+
+
+def cmd_hook(vault):
+    """Install a fire-and-forget post-commit hook (the 'crutch', STORY-041)."""
+    vault = os.path.abspath(vault)
+    # Resolve through git itself: vaults live in worktrees and submodules,
+    # where .git is a file and hooks live in the real git dir.
+    res = subprocess.run(["git", "-C", vault, "rev-parse", "--absolute-git-dir"],
+                         capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.exit(f"not a git repo: {vault}")
+    hooks_dir = os.path.join(res.stdout.strip(), "hooks")
+    script = os.path.abspath(__file__)
+    block = (f"{HOOK_MARKER} crutch — a commit changed vault state; ping NEW owed turns.\n"
+             f"(python3 {script} notify --vault {vault} >> /tmp/avatar.log 2>&1 &)\n")
+    path = os.path.join(hooks_dir, "post-commit")
+    if os.path.exists(path):
+        with open(path) as f:
+            if HOOK_MARKER in f.read():
+                print(f"[avatar] post-commit hook already wired: {path}")
+                return
+        with open(path, "a") as f:
+            f.write("\n" + block)
+    else:
+        with open(path, "w") as f:
+            f.write("#!/bin/sh\n" + block)
+    os.chmod(path, 0o755)
+    print(f"[avatar] wired {path} -> notify on every commit")
+
+
 def cmd_send(cfg, text, chat=None):
     chat = chat or next((s.get("chat_id") for s in cfg.get("seats", {}).values()
                          if s.get("chat_id")), None)
@@ -153,6 +184,10 @@ def main():
             chat = int(rest[i + 1])
             del rest[i:i + 2]
         cmd_send(cfg, " ".join(rest), chat)
+    elif cmd == "hook":
+        if not rest:
+            sys.exit("usage: avatar hook <vault-path>")
+        cmd_hook(rest[0])
     elif cmd == "updates":
         cmd_updates(cfg)
     else:

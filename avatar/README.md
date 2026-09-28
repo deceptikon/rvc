@@ -25,6 +25,7 @@ Group/dev–dev talks are later stories (see `rvc-vault/20_NEXT/EPIC-004`).
 | `updates` | list chat_ids of everyone who wrote to the bot (bootstrap) |
 | `notify --vault V [--force]` | owed-turn digests, deduped per day via `.avatar-state.json` |
 | `send "text" [--chat N]` | message a subscriber (default: first seat with a chat_id) |
+| `hook <vault-path>` | wire a post-commit hook: every commit checks for new owed turns (STORY-041) |
 
 No token → dry-run: every message prints to stdout instead of sending.
 Token can come from `AVATAR_TG_TOKEN` env instead of the config file.
