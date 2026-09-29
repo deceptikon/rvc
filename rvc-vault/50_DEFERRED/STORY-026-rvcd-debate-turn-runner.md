@@ -7,11 +7,37 @@ domain: workflow_meta
 domain_tags: ["arena", "rvcd", "turn-runner", "automation"]
 imported-from: "ADLAI STORY-106, STORY-109 am. 8"
 epic: "[[EPIC-001-RVC-Protocol]]"
+deferred: 2026-09-29
 ---
 
 # STORY-026: `rvcd debate` — the turn-runner daemon
 
 **Epic**: [[EPIC-001]] · **Human gate required before implementation**
+
+---
+
+## 2026-09-29 — DEFERRED: orchestration for threads that do not exist
+
+This is the most speculative item in the vault, and the measurement of 2026-09-29 makes it more so.
+The runner's job is to drive threads to convergence. **There are no threads.** The arena recorded
+zero uses in its two-day life; `rvc plate` shows `owes_turn: 0` and `owner: 0` on *both* vaults,
+including as the owner. A turn-runner over an empty queue is a scheduler for nothing — and building
+one is precisely how a comms system becomes "a second product competing for the same attention",
+the failure the owner's own account blames for the arena's collapse.
+
+**The blockers are also all still live, and two are not this project's to clear:**
+
+1. STORY-025 (grammar the runner reads) — deferred 2026-09-29.
+2. `Q-STORY-106-live-turns.md` — D still owes three deltas; the convergence state this is specified
+   against is unfinished.
+3. ADLAI's `T-GEN--compliance-lane` — unanswered, and it governs whether a runner may *read* corpus
+   rows or transcripts. AC5(b) says "do not implement blind". Nobody has answered in 13 days.
+4. AC5(a) — may an autonomous loop write into a vault at all — never posed to the owner.
+
+**Re-entry condition, in order:** STORY-039 ships and populates a real owed lane → the grammar is
+derived from the tool's actual output (STORY-025) → *then* ask the two human questions above. If the
+owed lanes are still empty when this is revisited, the correct answer is to delete this story, not
+to build it.
 
 ---
 
