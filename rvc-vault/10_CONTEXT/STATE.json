@@ -1,8 +1,11 @@
 {
   "active_issue": "",
   "active_branch": null,
-  "agent": "glm",
-  "started_at": "2026-09-28T22:29:16Z",
-  "last_run": "2026-09-28T22:42:39Z",
-  "last_qa": "pass (hook live-verified)"
+  "agent": "big-pickle",
+  "started_at": "2026-09-29T00:00:00Z",
+  "last_run": "2026-09-29T11:05:00Z",
+  "last_action": "state pass — triaged STORY-039 + EPIC-004; deferred EPIC-001/014/025/030/026; STORY-008 moved out of 90_ARCHIVE/done (faked); ROADMAP re-cut",
+  "next_issue": "STORY-039",
+  "next_blocked_on": [],
+  "last_qa": "114 passed, 0 failed, 1 skipped (test_rvc_plate needs pytest; not installed by design)"
 }

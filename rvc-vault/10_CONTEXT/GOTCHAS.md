@@ -67,3 +67,20 @@
   root, the bare copy lost its config and was graded against the legacy bucket map (recall
   collapsed 80% → 54%). Scratches of new-layout vaults must carry the effective marker
   (`marker_file(vault)` copied in as `.rvc-root`) to stay self-configured.
+- **`90_ARCHIVE/done/` is a claim, not a fact — audit it.** STORY-008 (2026-09-16) was filed to
+  the *done* archive with all four acceptance criteria unchecked, and the work was never done
+  (`run_cmd` still `shell=True` on 2026-09-29, 27 call sites). A `done/` folder is trusted
+  precisely because it is not re-read, so a false entry there is worse than a false entry in the
+  queue: the queue invites scepticism, the archive does not. When a story lands in `done/` or is
+  `evict`ed, grep its own AC checkboxes before trusting the folder.
+- **`shell=True` in `rvc/core.py:run_cmd` turns any unquoted path into a command.** This is not
+  theoretical: BUG-03 (2026-09-29) was a `git mv` on a filename containing an apostrophe failing
+  with `fatal: bad source`, silently degrading the transition to a plain move. The `shlex.quote`
+  applied at that one call site is a band-aid over ~27 interpolating call sites, three of which
+  embed a **user-supplied commit message** — a title like `fix: don't "break" the parser` is real
+  input. Until STORY-013 lands, treat every new `run_cmd` call site as a potential injection point.
+- **A `[0]` lane is ambiguous — read `rvc plate --format json`, not the text render.** On a vault
+  whose `.rvc-root` has no `alias.*` or `plate.owner`, `owes_turn`/`owner` are `[0]` because they
+  are *unreachable*, not because nothing is owed. `--as <handle>` against such a vault returns
+  `[]` identically. RVC's own vault was in this state for its whole life. If a lane's emptiness is
+  load-bearing for a decision, check the config before concluding anything from the count.

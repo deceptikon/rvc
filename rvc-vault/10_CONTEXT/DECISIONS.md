@@ -170,3 +170,55 @@ live decision; compress superseded ones to one line pointing at the resolving co
   resolution from root / inside the vault / subprojects is unchanged (verified). The empty
   `0-vault` was deleted and the symlinks restored. Lesson: `cmd init` must refuse to scaffold a
   second vault when a child owns an inner `.rvc-root`.
+
+## 2026-09-29 — big-pickle — state pass: the wire is built, the sensor is dark; supply is the bottleneck
+- **The measurement that reordered the vault.** With Avatar v0 shipped, its token configured, and
+  its post-commit hook live in adlai-vault, the system has delivered **zero** messages:
+  `avatar/.avatar-state.json` is `{"sent": {}}`. `rvc plate --format json` on *both* vaults reports
+  `owes_turn: 0`, `owner: 0` — including read as the owner. The only live owed row anywhere is
+  adlai-vault's hand-typed `00_INBOX/DISPATCH-SALWA-CORPUS-DEFECTS.md` (no `id:`, no `type:`, the
+  plate renders it `type=—`). EPIC-004's founding claim — "there is no live wire between the state
+  and the people" — was written that morning and is falsified by that evening. **Delivery was never
+  the constraint; supply is.** Telegram is 200 lines of stdlib urllib and already works. Nothing
+  mints an ask, so there is nothing to deliver. Adding forum topics and streaming drafts to a dark
+  sensor builds a more sophisticated machine for transmitting zero.
+- **EPIC-004 is now gated on STORY-039** (`gate: STORY-039` in frontmatter). The gate is one
+  checkable line — a real delivery recorded in `.avatar-state.json` — not a vibe. This is the
+  project's own lesson applied to itself: the arena died of formalism outrunning its participants,
+  and EPIC-004's v1+ is that same move unless supply lands first.
+- **STORY-039 is the next evolution.** It is the only open item that creates supply, and it is
+  upstream of everything else: the plate's owed lanes (STORY-024), Avatar's inbound `/ask`, the
+  grammar STORY-025 must derive, and any queue STORY-026 could ever drive. Its own AC5 — "four
+  forever-zero lanes must be impossible to ship" — is the regression fixture this state proves was
+  missing: those lanes sat at `[0]` for 13 days *underneath* shipped infrastructure built to serve
+  them.
+- **RVC's own plate is structurally degenerate, not merely empty.** `RVC/.rvc-root` declares no
+  `alias.*` and no `plate.owner` (adlai-vault declares both), so `owes_turn` and `owner` can never
+  be non-zero here — there is no identity to resolve against. This is STORY-024 AC3, unmade, and it
+  means any measurement drawn from RVC's own plate reads a dead sensor. Landed with STORY-039
+  (same files, and 039's AC5 fixture is exactly the cross-renderer agreement fixture 024 AC5 wants).
+- **STORY-013 was cut from five criteria to one.** The index half (AC2/AC3) was a false premise:
+  `rvc-vault` holds ~30 files, `adlai-vault` a few hundred, the plate renders in well under a
+  second, and a persisted index would be a second source of truth needing invalidation on every
+  transition. The `shell=True` half is not a hypothetical: it has 27 call sites and it already
+  produced BUG-03 six hours before this pass. Security, not performance, is what was actually
+  wrong.
+- **`90_ARCHIVE/done/` contained a fix that never happened.** STORY-008 sat in the done archive
+  with all four ACs unchecked, claiming `run_cmd()` was refactored; it was not. This is STORY-030's
+  failure mode inverted and more dangerous — there a live bug was filed as fixed, here a dead fix
+  was filed as live, in the one folder a reader trusts as settled history. Moved to
+  `90_ARCHIVE/superseded/`, superseded by the rescoped STORY-013. **Lesson: an archive folder is a
+  claim about the world, and claims rot silently.** A `done/` that is never audited is a liability
+  with a reassuring name.
+- **Four items deferred, each for a stated reason rather than a shrug.** EPIC-001 (a five-month-old
+  wishlist pinned P0 at the top of the ready queue; two requirements already superseded, one an
+  explicit anti-goal of the active epic). STORY-025 (normative R1–R10 is the learnable formalism
+  that killed the arena; write it *after* the generator, derived from its output). STORY-030 (the
+  incident that created it was closed the same day by `rvc feedback`; AC4 shipped better as
+  `plate.source.*`; AC1 generalises one proven channel to N with exactly one counterexample — zero).
+  STORY-014 (`pyyaml` would trade zero-dependency — load-bearing across the test runner, avatar,
+  and the context engine — for a parsing edge case in a `0600` legacy script).
+- **Deferral is recorded as re-entry conditions, not abandonment.** Every deferred story now states
+  the observable that would bring it back. Two of them say the honest re-entry is *deletion*: if
+  the owed lanes are still empty when STORY-026 is revisited, the right answer is to delete it, not
+  to build it.

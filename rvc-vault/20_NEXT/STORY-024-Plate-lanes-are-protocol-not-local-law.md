@@ -23,6 +23,34 @@ A second vault will want a different lane set. What must not happen is each vaul
 semantics in its own constitution, which is how ADLAI ended up maintaining seven lanes in two
 languages that nothing proves agree.
 
+## 2026-09-29 — AC1 and AC2 are already landed; AC3 is the one that bites
+
+This sat in the ready queue reading as greenfield. It is two-thirds done and the remaining third
+is the actual defect:
+
+- **AC1 ✅** — `10_CONTEXT/PLATE.md` exists and states the lanes.
+- **AC2 ✅** — waiting≠late is implemented, not just written: `rvc/plate.py:273-277` routes
+  `40_DECIDE` and `50_DEFERRED` items into `waiting` and into `waiting_paths`, which exempts them
+  from the overdue sweep (`plate.py:279-287`). The exemption is structural — a blocked decision
+  cannot be mislabelled late.
+- **AC3 ❌ — and it is the live bug.** `RVC/.rvc-root` still declares no `alias.*` and no
+  `plate.owner`. Verified: `rvc plate --as @deceptikon --format json` → `owes_turn: []`, `owner: []`.
+  Not "empty because nothing is owed" — **structurally unreachable**, because there is no identity
+  to resolve against. The two lanes this protocol exists to make trustworthy are the two that
+  cannot render on RVC's own vault. ADLAI's `.rvc-root` has the block; RVC's does not.
+- **AC4 ✅** — identity stays a caller filter (`--as`), never vault state.
+- **AC5 ❌** — no cross-renderer agreement fixture in `tests/`.
+- **AC6 ❌** — unrecorded.
+
+**Why this is now a blocker for the epic, not a documentation chore.** EPIC-004's Avatar reads
+exactly these lanes, and STORY-039's AC2 says lane semantics land in *this* story's spec. Closing
+AC3 makes the plate honest on the vault that dogfoods the tool; without it, any measurement drawn
+from RVC's own plate (including the one in EPIC-004) is reading a dead sensor.
+
+**Sequencing:** land AC3 + AC5 with STORY-039 in one session — same files (`.rvc-root`, `plate.py`,
+`specs/PLATE.md`), and 039's AC5 fixture ("four forever-zero lanes must be impossible to ship") is
+precisely the regression AC5 asks for.
+
 ## Acceptance criteria
 
 1. The lane definitions move out of any single vault's constitution and into a protocol spec
