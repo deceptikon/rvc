@@ -17,6 +17,32 @@ started: 2026-09-29
 
 ---
 
+## 2026-09-29 — TRIAGED: this is the next thing to build. It is the load-bearing one.
+
+Everything else in the vault is downstream of this, and the reason is now measured rather than
+argued. On 2026-09-29, with Avatar v0 shipped, its token configured, and its post-commit hook live
+in adlai-vault:
+
+- `avatar/.avatar-state.json` = `{"sent": {}}` — **zero messages ever delivered**.
+- `rvc plate --format json` on **both** vaults: `owes_turn: 0`, `owner: 0` — including as the owner.
+- The single live data point in the entire system is adlai-vault's hand-typed
+  `00_INBOX/DISPATCH-SALWA-CORPUS-DEFECTS.md` (no `id:`, no `type:`, plate renders it `type=—`).
+
+**The wire is built and the sensor is dark.** Delivery is a solved problem (200 lines of stdlib
+urllib); *supply* is not, and nothing in the vault mints an ask. This story is the only item that
+creates supply. `rvc ask` is also what makes EPIC-004's forum-topic-per-ask design meaningful, what
+gives STORY-025 something to derive its grammar from, and what would give STORY-026 a queue rather
+than an empty set.
+
+**The decisive argument is this story's own AC5** — "four forever-zero lanes on a vault with live
+external dependencies must be impossible to ship." Those four lanes have now sat at `[0]` for 13
+days *on top of shipped infrastructure built to serve them*. A regression fixture for that exact
+failure is the most valuable line of test code in this repo.
+
+**Scope discipline, restated because it is the whole design:** the tool emits the formal part.
+Nobody hand-writes frontmatter, a question block, or a grammar-conformant ask line. That is what
+the arena's first version got wrong, and it is why zero asks were minted in two days.
+
 ## The forensics (2026-09-29, ADLAI repo, full git history)
 
 The arena graduated here as STORY-025 after ADLAI v6.0 deleted it. Before designing anything
