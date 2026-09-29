@@ -5,9 +5,38 @@ priority: P2
 created: 2026-09-16
 domain: workflow_meta
 domain_tags: ["protocol", "cross-vault", "feedback", "triage"]
+deferred: 2026-09-29
 ---
 
 # STORY-030: There is no way for a consuming vault to report a defect to RVC
+
+## 2026-09-29 — DEFERRED: the incident this story exists for is closed
+
+Re-read against the record, this story has already been answered — by a narrower, better mechanism,
+on the same day it was written:
+
+- **The incident:** ADLAI STORY-107's "Findings (S2 smoke-run, for big-pickle)" were invisible
+  here — prose in a closed ticket in another repository. Verifiable from the original ticket.
+- **What shipped:** `rvc feedback ⟨file⟩` (STORY-036). On 2026-09-29 it ingested adlai-vault's four
+  backlogged letters as **`BUG-02`, `BUG-03`, `BUG-04`** in this vault — visible, triaged, fixed and
+  closed the same day. The findings arrived, carried `origin: adlai-vault`, and `rvc` committed the
+  handoff in adlai-vault too. AC2 ("the origin is written on the finding as it arrives") and the
+  "letter travels" direction are satisfied and in daily use.
+- **AC4 shipped by a better route.** Rather than a hand-built outbox lane, the plate derives
+  `plate.source.*` — IDs and counts only, no content crossing. That satisfies AC4 *and* honours the
+  non-goal more strictly than this story imagined: the envelope is so small it is a number.
+- **AC1/AC2 as written are speculative.** `rvc report <target-vault>` generalises one proven
+  channel (client → tool owner) to arbitrary N. No second client has ever needed it; adlai-vault is
+  the only consumer, and it is served. The generalisation is unfalsified because it has one
+  counterexample: zero.
+
+**What is actually still true and worth keeping:** the sharp half of this story is a *general*
+principle, not a feature — **one fact, one folder**, and a receiving vault is the sole authority on
+whether a defect is live. That is already law here (folder-as-state) and needs no story.
+
+**Re-entry condition.** A second vault files a finding that `rvc feedback` cannot address — i.e. a
+vault reporting to a vault it is not a client of, or one needing a reply channel. Until then this is
+speculative generality, and the two channels the platform does have are thin enough to notice.
 
 ---
 
