@@ -15,6 +15,33 @@ epic: "[[EPIC-001-RVC-Protocol]]"
 
 ---
 
+## 2026-09-29 — DEFERRED: this is the formalism that killed the arena, restated
+
+The forensics in STORY-039 are damning enough to apply to this story. The arena's grammar was
+delivered as a **document participants had to learn**, and it was used zero times in two days. This
+story's deliverable is a normative, machine-checkable statement of R1–R10 that every consuming
+vault is expected to adopt — the same artefact, one layer further from the participant.
+
+The design consequence STORY-039 draws is the opposite of this story's method:
+
+> Nobody should ever hand-write frontmatter, a question block, or a grammar-conformant ask line.
+> Grammar that must be *learned* will be *avoided*. Grammar that is *generated* just becomes the
+> file format.
+
+**Defer, but do not discard — and note the stated failure has *not* recurred.** The concern in the
+preamble is that content archived as "superseded" had no home. It does now: the full corpus is in
+`10_CONTEXT/specs/arena/` (11 files, ~100 KB) with `README.md` as a provenance manifest. The
+transcription has a home, so nothing is at risk of being lost by waiting.
+
+**Re-entry condition.** Write the grammar *after* `rvc ask` exists, and derive it *from* the tool's
+output — from the files it actually mints — rather than authoring it in the abstract and then
+building a generator to match. If the generator's output and the grammar ever disagree, the grammar
+is wrong; a spec written first has no such check. Concretely: land STORY-039, then diff the
+minted shape against this document, then decide whether R1–R10 still describe reality or describe
+ADLAI v5.3.
+
+---
+
 Rules R1–R10 (one question per file, canonical aliases, seat authority, invitations-as-checkboxes,
 disposition-not-deletion, duty-binds-the-author, turns-from-open-asks) were written into ADLAI's
 constitution. They are protocol: every multi-seat vault needs them and ADLAI v6.0 is deleting them
