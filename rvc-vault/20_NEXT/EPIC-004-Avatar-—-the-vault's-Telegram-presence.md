@@ -7,6 +7,8 @@ epic: null
 domain: workflow_meta
 domain_tags: [avatar, telegram, arena, presence, notifications]
 created: 2026-09-29
+triage: 2026-09-29
+gate: STORY-039
 ---
 
 # EPIC-004: Avatar — the vault's Telegram presence
@@ -67,13 +69,54 @@ One bot — **Avatar** — as the vault's presence in Telegram:
 No webhook infrastructure. No Mini Apps. No payments. No chat-side state: a deleted group holds
 no truth; if it isn't in the vault, it didn't happen.
 
+---
+
+## 2026-09-29 — the diagnosis below is half-falsified; the wire is live and the sensor is dark
+
+This epic was written on 2026-09-29 morning, on the belief that the file-arena died for want of a
+**live wire** ("there is no live wire between the state and the people"). By that evening the wire
+existed: STORY-040 shipped `avatar notify` and STORY-041 wired a post-commit hook into
+`adlai-vault`. The thesis was then testable, and it does not hold as stated.
+
+**What was measured, with the shipped tooling:**
+
+| Claim | Measurement |
+|---|---|
+| A live wire is now missing | **False.** `avatar hook` is installed in adlai-vault; a commit fires `avatar notify`. |
+| Avatar reaches humans | **False.** `avatar/.avatar-state.json` is `{"sent": {}}` — **zero messages have ever been delivered.** |
+| The plate feeds Avatar | **Effectively false.** `rvc plate --format json` on *both* vaults: `owes_turn: 0`, `owner: 0` — including as the owner. |
+| The arena died for lack of a wire | **Wrong causal story.** The arena died because the *ask* was never minted — 0 uses in its 2-day life (STORY-039 forensics). |
+
+**The one live data point in the whole system** is `adlai-vault/00_INBOX/DISPATCH-SALWA-CORPUS-DEFECTS.md`
+— hand-typed prose, no `id:`, no `type:` (the plate renders it `type=—`), no owner field. It is the
+single row behind `@salwa owes 1`. Avatar's entire v0 output traces to one human-typed file that no
+command produced and no grammar validated. That is the unplugged-sensor bug again, one layer up.
+
+**RVC's own plate is worse — structurally degenerate.** `RVC/.rvc-root` declares no `alias.*` and no
+`plate.owner` (adlai-vault declares both). So on this vault `owes_turn` and `owner` can *never* be
+non-zero: there is no identity to resolve against. STORY-024 AC3 is the fix and it is unmade.
+
+**What this changes.** The bottleneck is not delivery, and no amount of Telegram surface area
+(forum topics, streaming drafts, dev–dev talks) will move it. Telegram is a solved problem here:
+stdlib HTTPS, 200 lines, working, installed. The unsolved problem is **supply** — nothing mints
+asks, so nothing to deliver. Building v1+ on a dark sensor produces a more sophisticated machine
+for transmitting zero.
+
+**Gate: `gate: STORY-039` in this file's frontmatter is binding.** No story below the line
+"*seat linking + long-poll*" starts until `rvc ask` exists and has demonstrably produced at least
+one real delivery — a human actually pinging a human on Telegram, recorded in `.avatar-state.json`.
+That is a one-line check, and it is the difference between this epic being a presence and being
+another compliance surface the participants route around.
+
 ## Stories
 
-- **STORY-040 →** (next minted) *avatar v0 crutch* — outbound notify: plate `owes_turn` lanes →
-  per-seat DM or group digest; `avatar send` for agents to speak into the group. Stdlib only,
-  config file, dedupe state. The crutch that grows.
+- **STORY-040 → 60_DONE** ✅ *avatar v0 crutch* — outbound notify: plate `owes_turn` lanes →
+  per-seat DM; `avatar send`; stdlib only, config file, dedupe state. Shipped, and honest about
+  being dark: 0 deliveries.
+- **STORY-041 → 60_DONE** ✅ *avatar hook* — idempotent post-commit wiring, live in adlai-vault.
+  It faithfully fires on every commit. There is nothing to fire *about*.
 - *seat linking + long-poll* — `/link` user_id↔handle, `getUpdates` loop, `/ask` mints through
-  STORY-039's ask grammar.
+  STORY-039's ask grammar. **Gated on STORY-039** (see above).
 - *dev–dev talks* — forum topic per ask; tag-to-turn; verdict buttons append dated sections to
   the ask file; topic archives on verdict.
 - *presence* — streaming answers (`sendMessageDraft`); agents join talks as first-class seats.
