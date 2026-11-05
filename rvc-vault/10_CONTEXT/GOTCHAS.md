@@ -105,3 +105,12 @@
   ever-growing chunk whose retrieval score dilutes until the context benchmark fails
   (measured: STORY-029 lost GOTCHAS.md from its top-5 after one long append). New
   entries go under their own dated section.
+- **`.rvc-root` rewrites are atomic (temp file + `os.replace`).** The marker is read by
+  lock-free commands (`resolve_tree` at the top of `create`) while `bump_mint_floor`
+  rewrites it on every mint — a truncate-then-write window once read as an empty marker
+  and resolved the LEGACY tree mid-run, filing an issue into `10_Issues/01_To_Do`.
+  Never write the marker with a bare `open(path, "w")`.
+- **The create lock is inode-checked.** A waiter queued on a lock file that was unlinked
+  and replaced (the STORY-130 no-residue cleanup) must retry on the current inode —
+  two holders once minted duplicate ids. Corollary: exit-code 2 or a flaky concurrency
+  test means a race, never "bad luck" — stress it before closing.

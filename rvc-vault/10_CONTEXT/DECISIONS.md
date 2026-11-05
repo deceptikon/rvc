@@ -258,3 +258,14 @@ live decision; compress superseded ones to one line pointing at the resolving co
   isolated by reverting each delta in a scratch vault. Fix: new entries go under their
   own dated heading (a new chunk, not a longer old one). The ranker's b=1.0 length
   normalization stays as measured in STORY-033.
+- **Two concurrency races surfaced while regression-testing round 2, both fixed (BUG-09).**
+  The create lock's unlink-on-exit (STORY-130) let a retired-inode waiter run beside a
+  fresh holder — duplicate minted ids, ~1 run in 3 with 8 forked creates, reproducible on
+  the pre-session tree. And `bump_mint_floor`'s truncate-then-write marker could read as
+  empty to the lock-free `resolve_tree`, silently resolving the LEGACY tree and filing
+  an issue into `10_Issues/01_To_Do`. Fixes: inode recheck after flock acquisition
+  (`_lock_path_is_current`) and atomic marker writes (`_atomic_write_text`). Both are
+  stdlib-only and add no locks to the hot path. The concurrency test now scans for
+  stray files outside the create bucket — per-path existence checks cannot see a
+  wrong-bucket mint. Ids are permanent: a duplicate mint is the worst failure this
+  tool has, so the stress harness (40 runs, zero flakes) is part of the regression.
