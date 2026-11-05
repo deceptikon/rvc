@@ -114,3 +114,9 @@
   and replaced (the STORY-130 no-residue cleanup) must retry on the current inode —
   two holders once minted duplicate ids. Corollary: exit-code 2 or a flaky concurrency
   test means a race, never "bad luck" — stress it before closing.
+- **Feedback can arrive into this repo while you work.** `rvc feedback` commits
+  straight into RVC's own repo (that is the channel working as designed — ADLAI's
+  guest agent did it live during the 2026-11-06 session, commit b628b16). Before
+  deleting any "mystery" new vault file: `git log --oneline --all -- <path>` first.
+  Duplicates of executed letters get a resolution addendum and `supersede`, never
+  a re-triage or a `rm`.

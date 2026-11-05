@@ -73,8 +73,19 @@ def _feedback_target(vault_path, explicit, cli_root=None):
 
 
 def _feedback_title(text):
-    """Derive a title from the letter: its first H1, else its first non-blank line."""
-    for line in text.splitlines():
+    """Derive a title from the letter: its first H1, else its first non-blank line.
+
+    A letter may open with its own frontmatter block (`---` … `---`) — skip it
+    before looking, or the title mangles to `---` (BUG-02 and BUG-10 both
+    shipped with the empty-dash title)."""
+    lines = text.splitlines()
+    start = 0
+    if lines and lines[0].strip() == "---":
+        for j in range(1, len(lines)):
+            if lines[j].strip() == "---":
+                start = j + 1
+                break
+    for line in lines[start:]:
         stripped = line.strip()
         if not stripped:
             continue

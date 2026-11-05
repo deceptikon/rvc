@@ -32,6 +32,39 @@ def _write_letter(vault, rel="00_INBOX/FEEDBACK-rvc.md", text=LETTER_TEXT):
     return path
 
 
+def test_feedback_title_skips_letter_frontmatter():
+    """A letter opening with its own frontmatter block must not title the issue
+    `---` (BUG-02 and BUG-10 both shipped with the empty-dash title)."""
+    _, client = make_vault()
+    _, target = make_vault()
+    letter = _write_letter(client, text=(
+        "---\n"
+        "type: feedback\n"
+        "tool: rvc\n"
+        "date: 2026-09-27\n"
+        "---\n\n"
+        "# FEEDBACK — `rvc plate` AC counters read 0/0\n\n"
+        "Numbered criteria never match.\n"
+    ))
+
+    rvc_cli.cmd_feedback(client, letter, to=target, origin="adlai")
+
+    created = os.path.join(target, "00_INBOX")
+    minted = [f for f in os.listdir(created) if f.startswith("BUG-01")]
+    assert minted and not minted[0].startswith("BUG-01----"), \
+        f"frontmatter-opening letter mangled the title: {minted}"
+    fm = read_frontmatter(os.path.join(created, minted[0]))
+    assert fm["title"] == "FEEDBACK — `rvc plate` AC counters read 0/0", fm["title"]
+    # A letter with no closing frontmatter fence keeps the old behavior.
+    assert rvc_cli._feedback_title("---\nno fence, just a stray opener\n") == "---"
+
+
+def test_feedback_title_takes_first_nonblank_without_frontmatter():
+    assert rvc_cli._feedback_title("# FEEDBACK-rvc\n\nbody") == "FEEDBACK-rvc"
+    assert rvc_cli._feedback_title("- 2026-09-29 (STORY-142): `git mv` fails\n") == \
+        "- 2026-09-29 (STORY-142): `git mv` fails"
+
+
 def test_feedback_ingests_letter_as_bug():
     """AC1: the letter lands in the target vault as BUG-01, source removed."""
     _, client = make_vault()
