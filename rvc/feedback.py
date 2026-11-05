@@ -20,6 +20,7 @@ import sys
 from rvc.core import (
     find_git_root, find_vault_root, find_marker_dir, marker_file, _ref_vault_dir,
     resolve_tree, _next_id, bump_mint_floor, vault_create_lock, run_cmd,
+    _atomic_write_text,
 )
 from rvc.git import sync_after, is_tracked
 from rvc.issues import _sanitize_filename
@@ -119,8 +120,9 @@ def _ensure_feedback_config(client_vault, target, name="rvc", alias="F"):
             content = f.read()
     if content and not content.endswith("\n"):
         content += "\n"
-    with open(root_file, "w") as f:
-        f.write(content + "\n".join(added) + "\n")
+    # Atomic replace (core._atomic_write_text): the marker is read by
+    # lock-free commands while this rewrite is in flight.
+    _atomic_write_text(root_file, content + "\n".join(added) + "\n")
     return added
 
 

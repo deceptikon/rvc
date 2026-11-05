@@ -13,6 +13,9 @@
   says why instead of a bare "No results".
 - BUG-08: the flag that runs CI is `--no-skip-ci` (alias `--ci`); `--skip-ci`
   survives only as a deprecated, warning alias of the flag it used to betray.
+- BUG-09: a waiter queued on a retired (unlinked+replaced) create-lock inode
+  must release and retry on the current file — not run the mint critical
+  section beside the fresh holder. Duplicate ids are the failure mode.
 """
 
 import contextlib
@@ -125,3 +128,54 @@ def test_help_leads_with_the_inversion():
     assert "--no-skip-ci" in create_help
     assert "default ON" in create_help
     assert "--skip-ci    disable" not in create_help
+
+
+# ── BUG-09: lock-file replacement must not double-hold the mint ──────────────
+
+def test_lock_path_is_current_detects_replacement():
+    """The guard behind the BUG-09 fix: a waiter can tell its inode was retired.
+
+    The lock file is unlinked on a clean exit (STORY-130); a waiter still
+    holding the retired inode open must see `False` and retry on the file the
+    path names now, instead of proceeding beside the fresh holder.
+    """
+    _, vault = make_vault()
+    lock = os.path.join(vault, rvc_cli.LOCK_FILE_NAME)
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        assert rvc_cli._lock_path_is_current(lock, fd) is True
+        # A holder exits (unlink), a fresh opener creates the replacement.
+        os.unlink(lock)
+        fd2 = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            assert rvc_cli._lock_path_is_current(lock, fd) is False, \
+                "a waiter on a retired inode must not proceed"
+            assert rvc_cli._lock_path_is_current(lock, fd2) is True
+        finally:
+            os.close(fd2)
+        # Path gone entirely (replacement removed too): nothing is current.
+        os.unlink(lock)
+        assert rvc_cli._lock_path_is_current(lock, fd) is False
+    finally:
+        os.close(fd)
+
+
+def test_create_succeeds_over_a_foreign_lock_file():
+    """A create arriving at a replaced lock file still mints cleanly.
+
+    Simulates the exact replacement sequence: ghost inode replaced by a fresh
+    file that nobody holds — the create must acquire, mint STORY-01, and
+    leave no residue."""
+    _, vault = make_vault()
+    lock = os.path.join(vault, rvc_cli.LOCK_FILE_NAME)
+    ghost = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        os.write(ghost, b"pid=999999\n")
+    finally:
+        os.close(ghost)
+    os.unlink(lock)                       # holder's exit cleanup
+    fd2 = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)   # a fresh opener's file
+    os.close(fd2)
+    path = rvc_cli.cmd_create_issue(vault, "Replacement probe", priority="P1")
+    assert os.path.basename(path).startswith("STORY-01-")
+    assert not os.path.exists(lock), "no lock residue after a clean create"

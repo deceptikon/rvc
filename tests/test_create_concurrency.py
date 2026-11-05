@@ -52,7 +52,16 @@ def test_concurrent_creates_mint_unique_ids():
     nums = sorted(int(i.split("-")[1]) for i in ids)
     assert nums == list(range(1, CONCURRENCY + 1)), f"non-sequential IDs: {nums}"
 
-    # Every minted file physically exists and carries a unique id: frontmatter.
+    # Every minted file physically exists in the CREATE bucket and carries a
+    # unique id: frontmatter. (BUG-09 found a second race this assertion set
+    # could not see: a torn `.rvc-root` read resolved the LEGACY tree and one
+    # create landed in `10_Issues/01_To_Do` — the file existed, so per-path
+    # checks passed. Scan the whole vault for strays.)
+    strays = []
+    for root, _, files in os.walk(vault):
+        if os.path.basename(root) != "00_INBOX":
+            strays += [f for f in files if f.startswith("STORY-")]
+    assert not strays, f"issues minted outside the create bucket: {strays}"
     for fname in ids:
         path = os.path.join(vault, "00_INBOX", fname)
         assert os.path.exists(path), f"missing minted file: {path}"

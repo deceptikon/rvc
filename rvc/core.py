@@ -225,7 +225,9 @@ def state_label(file_path, vault_path):
 
 
 def write_tree_config(vault_path, tree):
-    """(Re)write the effective .rvc-root with a tree.* block, preserving a leading vault= line."""
+    """(Re)write the effective .rvc-root with a tree.* block, preserving a leading vault= line.
+
+    Atomic (see `_atomic_write_text`): the marker is never observed truncated."""
     root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
     keep = []
     if os.path.exists(root_file):
@@ -235,12 +237,37 @@ def write_tree_config(vault_path, tree):
                 if line.startswith("tree.") or not line:
                     continue
                 keep.append(line)
-    with open(root_file, "w") as f:
-        f.write("# RVC vault root\n")
-        for line in keep:
-            f.write(line + "\n")
-        for verb, d in sorted(tree.items()):
-            f.write(f"tree.{verb}={d}\n")
+    out = ["# RVC vault root"]
+    out += keep
+    for verb, d in sorted(tree.items()):
+        out.append(f"tree.{verb}={d}")
+    _atomic_write_text(root_file, "\n".join(out) + "\n")
+
+
+def _atomic_write_text(path, text):
+    """Write `text` to `path` atomically: temp file in the same dir, then rename.
+
+    `.rvc-root` is read by commands that hold no lock (e.g. `resolve_tree` at
+    the top of `create`) while lock holders rewrite it (`bump_mint_floor` on
+    every mint). A truncate-then-write marker is empty for a moment — a
+    concurrent reader saw that window and resolved the LEGACY tree, filing a
+    minted issue into `10_Issues/01_To_Do` (BUG-09, measured 2026-11-06).
+    `os.replace` is atomic: readers see the old or the new content, never a
+    torn or empty marker.
+    """
+    tmp = os.path.join(os.path.dirname(path) or ".", f".{os.path.basename(path)}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 README_TEMPLATE = """# {PROJECT_NAME}
@@ -597,20 +624,52 @@ def _lock_record(fd):
 
 @contextmanager
 def vault_create_lock(vault_path):
+    """Cross-process create lock (flock authoritative, pid record diagnostic).
+
+    The lock file is unlinked on a clean exit (STORY-130: no residue), which
+    opens the classic replacement race: a waiter that already opened the old
+    inode keeps queuing on it after the unlink, while a later opener creates
+    a replacement file and locks it uncontended — two "holders" in the mint
+    critical section at once, duplicate ids (BUG-09: measured 1 run in 3,
+    `[1,2,3,4,5,6,6,7]`). The guard: after acquiring the flock, the path must
+    still name our inode — a waiter on a retired inode releases and retries
+    on the current file. The unlink keeps its own inode check (STORY-130),
+    so a holder never deletes a replacement it does not own.
+    """
     lock_path = os.path.join(vault_path, LOCK_FILE_NAME)
     deadline = time.monotonic() + LOCK_TIMEOUT
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
-    try:
-        while not _lock_acquire(fd):
-            if time.monotonic() >= deadline:
-                holder = _lock_record(fd)
-                msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
-                       "process — aborting to avoid a duplicate-ID race.")
-                if holder:
-                    msg = msg.replace("by another process", f"by {holder}")
-                raise TimeoutError(msg)
-            time.sleep(0.05)
+    fd = None
+    while True:
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            while not _lock_acquire(fd):
+                if time.monotonic() >= deadline:
+                    holder = _lock_record(fd)
+                    msg = (f"Lock {lock_path} held > {LOCK_TIMEOUT}s by another "
+                           "process — aborting to avoid a duplicate-ID race.")
+                    if holder:
+                        msg = msg.replace("by another process", f"by {holder}")
+                    raise TimeoutError(msg)
+                time.sleep(0.05)
 
+            if _lock_path_is_current(lock_path, fd):
+                break
+            # Our flock guards a retired inode (its file was unlinked and
+            # replaced while we waited). Release and contend on the file
+            # the path names now.
+            _lock_release(fd)
+            os.close(fd)
+            fd = None
+            time.sleep(0.05)
+        except Exception:
+            if fd is not None:
+                try:
+                    _lock_release(fd)
+                finally:
+                    os.close(fd)
+            raise
+
+    try:
         # The flock is the authoritative lock; the pid record is diagnostic. If
         # it names a dead process, the marker is a leftover from an interrupted
         # create — a crashed holder's flock was released by the kernel, so this
@@ -632,17 +691,34 @@ def vault_create_lock(vault_path):
         # used to accumulate untracked at the vault root). Unlink only while the
         # path still names the inode we locked, and only while we still hold the
         # flock: waiters that already opened this inode keep serializing among
-        # themselves, and a brand-new opener after the unlink starts fresh. The
-        # inode check guarantees we never delete a replacement file.
-        try:
-            st_path = os.stat(lock_path)
-            st_fd = os.fstat(fd)
-            if st_path.st_dev == st_fd.st_dev and st_path.st_ino == st_fd.st_ino:
-                os.remove(lock_path)
-        except OSError:
-            pass
-        _lock_release(fd)
-        os.close(fd)
+        # themselves, and the post-acquisition inode check above makes a waiter
+        # on a retired inode retry on the replacement instead of running beside
+        # it. The inode check guarantees we never delete a replacement file.
+        if fd is not None:
+            try:
+                st_path = os.stat(lock_path)
+                st_fd = os.fstat(fd)
+                if st_path.st_dev == st_fd.st_dev and st_path.st_ino == st_fd.st_ino:
+                    os.remove(lock_path)
+            except OSError:
+                pass
+            _lock_release(fd)
+            os.close(fd)
+
+
+def _lock_path_is_current(lock_path, fd):
+    """True when `lock_path` still names the inode `fd` holds the flock on.
+
+    The lock file is unlinked on a clean exit, so a path that names a
+    different (newer) inode means our flock guards a retired file — its
+    critical section is not the current one (BUG-09 duplicate-mint race).
+    """
+    try:
+        st_path = os.stat(lock_path)
+        st_fd = os.fstat(fd)
+    except OSError:
+        return False
+    return st_path.st_dev == st_fd.st_dev and st_path.st_ino == st_fd.st_ino
 
 
 def _next_id(vault_path, prefix="STORY"):
@@ -718,6 +794,7 @@ def bump_mint_floor(vault_path, prefix, num):
         if lines and lines[-1].strip():
             lines.append("")
         lines.append(f"{key}{num}")
-    with open(root_file, "w") as f:
-        f.write("\n".join(lines) + "\n")
+    # Atomic replace (see `_atomic_write_text`): readers that hold no create
+    # lock must never see the marker truncated empty mid-rewrite.
+    _atomic_write_text(root_file, "\n".join(lines) + "\n")
     return root_file
