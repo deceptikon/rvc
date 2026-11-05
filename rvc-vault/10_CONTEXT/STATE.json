@@ -4,8 +4,8 @@
   "agent": "big-pickle",
   "started_at": "2026-09-29T00:00:00Z",
   "last_run": "2026-11-06T12:00:00Z",
-  "last_action": "FEEDBACK round 2 done (BUG-05..09); BUG-10 duplicate superseded -> BUG-02; ingest title frontmatter fix; 126 tests green",
+  "last_action": "FEEDBACK round 2 done (BUG-05..09); BUG-10 duplicate superseded -> BUG-02; ingest title frontmatter fix; 125 tests green",
   "next_issue": "STORY-039",
   "next_blocked_on": [],
-  "last_qa": "126 passed, 0 failed, 1 skipped (test_rvc_plate needs pytest; not installed by design)"
+  "last_qa": "125 passed, 0 failed, 1 skipped (test_rvc_plate needs pytest; not installed by design)"
 }
