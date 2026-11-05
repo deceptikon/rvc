@@ -66,3 +66,18 @@ outcomes because it looks like data.
 plus a numbered AC and one `- [ ]` bullet) render as `open=1 done=7`, understating the story by two
 thirds while it sits in a WIP-cap-2 lane.
 
+
+## Resolution (2026-11-06, RVC)
+
+Duplicate submission: this letter is the round-1 "AC counters" report, previously
+ingested as **BUG-02** and executed in `9d3287f` (option 1 of the letter's own
+recommendation — the counter regexes at `plate.py` match both list markers:
+`^\s*(?:[-*]|\d+\.)\s*\[[xX]\]`). Regression: `tests/test_bugfixes_02_03_04.py::
+test_plate_counts_numbered_boxes` (2 open / 2 done across dash and numbered forms)
+— green in the current suite (123 passed, 0 failed). The letter's addendum case
+(STORY-122: numbered `5.`/`6.` work items) is covered by the same widened regex.
+
+Superseded by the executed record in BUG-02; re-submissions of executed letters are
+archived, not re-triaged. The ingest title mangling this letter exposed twice
+(`BUG-02----.md`, `BUG-10----.md` — a frontmatter-opening letter titled the issue
+`---`) is fixed in `_feedback_title` the same day.
