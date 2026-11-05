@@ -222,3 +222,32 @@ live decision; compress superseded ones to one line pointing at the resolving co
   the observable that would bring it back. Two of them say the honest re-entry is *deletion*: if
   the owed lanes are still empty when STORY-026 is revisited, the right answer is to delete it, not
   to build it.
+
+## 2026-11-06 — FEEDBACK-rvc round 2 (ADLAI letter)
+
+- **Id minting scans the whole vault, not the tree.** The max-on-disk scan read only the
+  tree's buckets, so an id resting in `90_ARCHIVE/FROM INBOX/` (named by no verb) could be
+  minted twice — ids are permanent, and the floor (BUG-04) only remembers numbers nothing
+  on disk remembers. `_next_id` now walks every directory: simpler than enumerating
+  "every bucket", and the cost (a vault-wide walk under a lock) is the same order as
+  `rescan`. BUG-05.
+- **The plate renders every parked file.** `50_DEFERRED` non-issues were invisible (the
+  `is_issue` gate), and the lane titled "deferred on purpose" actually showed `40_DECIDE`
+  rulings. Kept the fold into one WAITING lane (a park and a ruling are both "not late",
+  the load-bearing property), fixed the title to name both, and gave rows a
+  `[40_DECIDE]`/`[50_DEFERRED]` bucket tag so a reader tells them apart. Rendering, not
+  record: the folder stays the only state. BUG-06.
+- **`--skip-ci` is a deprecated, warning alias.** The name inverted its own meaning
+  (passing it *minted* a full pipeline). `--no-skip-ci`/`--ci` is the honest spelling;
+  the old flag keeps working with a stderr note — operators' scripts must not break over
+  a rename, and the warning teaches the inversion at the exact point of confusion.
+  BUG-08.
+- **Search: whole phrase → all-terms substring fallback → explained empty.** No stemmer
+  (a dependency and a guess); the fallback is substring, so "filename" hits "filenames",
+  and a bare "No results" now states which terms missed and to retry with fewer words.
+  BUG-07.
+- **Feedback is triaged per-item, not per-letter.** BUG-05..08 were minted individually
+  (the letter's six already-resolved items were verified against existing tests instead
+  of re-filed) and the letter itself was archived superseded with a resolution note —
+  same shape as the round-1 letter. A re-ingested letter would double-file every fixed
+  item.

@@ -84,3 +84,24 @@
   are *unreachable*, not because nothing is owed. `--as <handle>` against such a vault returns
   `[]` identically. RVC's own vault was in this state for its whole life. If a lane's emptiness is
   load-bearing for a decision, check the config before concluding anything from the count.
+
+- **`rvc search` matches *lines*, not files — multi-word queries fall back.** A whole
+  phrase must sit in one line to match verbatim; otherwise every term must appear as a
+  substring of the same line (annotated "all-terms fallback" in the header). An empty
+  result prints which terms missed and hints to retry with fewer words. Search was never
+  token-AND over a cache — it is a line grep (FEEDBACK-rvc round 2 measured a "cache" that
+  never existed).
+- **`--skip-ci` reads backwards and is kept only as an alias.** It *disables* the
+  `[skip ci]` stamp (i.e. runs CI); passing it wants a quiet commit and mints a pipeline
+  instead. Use `--no-skip-ci` or `--ci`; the old flag now prints a deprecation note to
+  stderr and still works.
+- **`argparse` custom `Action` classes need `nargs=0`** for a flag-style (valueless)
+  option — the default `nargs=None` makes `parse_args` demand a value and exit 2.
+  Also: `SystemExit` bypasses `except Exception` — the stdlib test runner (`tests/run_tests.py`)
+  dies silently (rc=2, no traceback) on an argparse error inside a test. Exit-code 2 from
+  the runner means "a test called sys.exit", not "a test failed".
+- **Minted ids are unique across the *whole* vault, archive subfolders included.**
+  `_next_id` walks every directory, not just tree buckets — a hand-made archive folder
+  like `90_ARCHIVE/FROM INBOX/` is invisible to the tree and used to breed collisions
+  (ids are permanent). The `mint.<PREFIX>=` floor in `.rvc-root` still covers numbers
+  nothing on disk remembers.
