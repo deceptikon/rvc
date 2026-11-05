@@ -272,7 +272,11 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             # STORY-031; ADLAI's DQL "Awaiting a ruling" lists all of 40_DECIDE).
             lanes["waiting"].append(surface)
             waiting_paths.add(rel)
-        elif rel.startswith((watched["deferred"] or "?") + "/") and surface["is_issue"]:
+        elif rel.startswith((watched["deferred"] or "?") + "/"):
+            # A park is a park: ANY file parked in the deferred bucket renders
+            # (issues and non-issues alike — the measured blind spot was an
+            # ESSAY the plate could not see, FEEDBACK-rvc 2026-11-05). The
+            # bucket tag in the render tells a park from a ruling.
             lanes["waiting"].append(surface)
             waiting_paths.add(rel)
 
@@ -355,7 +359,11 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
         "owner": "AWAITING THE OWNER",
         "active": "ACTIVE (WIP cap 2)",
         "next": "NEXT — the queue",
-        "waiting": "WAITING — deferred on purpose (not late)",
+        # The lane holds two kinds of not-late: 40_DECIDE items blocked on a
+        # ruling and 50_DEFERRED items parked on purpose. The old title named
+        # only the park, so a blocked ruling read as "deferred on purpose"
+        # (FEEDBACK-rvc 2026-11-05) — rows carry a bucket tag to tell them apart.
+        "waiting": "WAITING — on a ruling (40_DECIDE) or parked on purpose (50_DEFERRED); not late",
         "overdue": f"OVERDUE — no new section ≥ {stale_days} days",
         "inbox": "INBOX — deposits, acknowledged not actionable",
     }
@@ -373,6 +381,9 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                 lines.append(f"  {row['name']}  open={row['open_boxes']} done={row['done_boxes']}")
             elif key == "next":
                 lines.append(f"  {row['priority'] or '—':>3}  {row['name']}")
+            elif key == "waiting":
+                bucket = row["path"].split("/")[0]
+                lines.append(f"  [{bucket}] {row['name']}  pri={row['priority'] or '—'}")
             elif key == "overdue":
                 lines.append(f"  {row['age_days']:>3}d  {row['path']}  (last: {row['last_speaker']})")
             elif key == "inbox":

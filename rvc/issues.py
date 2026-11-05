@@ -277,26 +277,55 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
 
 
 def cmd_search(vault_path, query):
-    """Search vault .md files for a pattern (case-insensitive grep)."""
-    results = []
-    for root, dirs, files in os.walk(vault_path):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        for fname in files:
-            if not fname.endswith(".md"):
-                continue
-            fpath = os.path.join(root, fname)
-            try:
-                content = open(fpath, "r").read()
+    """Search vault .md files: substring lines first, then an all-terms fallback.
+
+    A multi-word query that matches nothing whole used to print a bare
+    "No results" with no why (FEEDBACK-rvc 2026-11-05: `search "apostrophe
+    filename"` found nothing while `search "apostrophe"` hit 3 — the file said
+    "filenames"). Now: lines containing the whole phrase; else lines containing
+    every term (substring, so "filename" still hits "filenames"); else a hint.
+    """
+    def _file_lines():
+        for root, dirs, files in os.walk(vault_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for fname in files:
+                if not fname.endswith(".md"):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, "r", errors="replace") as f:
+                        content = f.read()
+                except Exception:
+                    continue
+                rel = os.path.relpath(fpath, vault_path)
                 for i, line in enumerate(content.split("\n"), 1):
-                    if query.lower() in line.lower():
-                        rel = os.path.relpath(fpath, vault_path)
-                        results.append(f"{rel}:{i}: {line.strip()}")
-            except Exception:
-                pass
+                    yield rel, i, line
+
+    results = []
+    for rel, i, line in _file_lines():
+        if query.lower() in line.lower():
+            results.append(f"{rel}:{i}: {line.strip()}")
+
+    note = ""
+    tokens = [t for t in query.split() if t]
+    if not results and len(tokens) > 1:
+        # Fallback: every term as a substring of the same line.
+        low = [t.lower() for t in tokens]
+        for rel, i, line in _file_lines():
+            lline = line.lower()
+            if all(t in lline for t in low):
+                results.append(f"{rel}:{i}: {line.strip()}")
+        if results:
+            note = " (all-terms fallback: no line carries the whole phrase)"
 
     if results:
-        print(f"# Search results for '{query}' ({len(results)} matches)\n")
+        print(f"# Search results for '{query}' ({len(results)} matches){note}\n")
         for r in results:
             print(r)
     else:
         print(f"No results for '{query}'")
+        if len(tokens) > 1:
+            print(f"      No line contains every term: {', '.join(tokens)}.")
+            print("      Try fewer words — search matches lines, not whole files.")
+        else:
+            print("      Try a shorter fragment — search matches text inside lines.")

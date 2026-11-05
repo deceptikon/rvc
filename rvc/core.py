@@ -646,25 +646,30 @@ def vault_create_lock(vault_path):
 
 
 def _next_id(vault_path, prefix="STORY"):
+    """Mint the next id for `prefix`; a minted id never exists anywhere on disk.
+
+    The scan walks the WHOLE vault, not just the tree's buckets: ids are
+    permanent, and files rest in places the tree never names — `90_ARCHIVE/FROM
+    INBOX/` cost ADLAI a STORY-153 collision because the max-on-disk scan
+    skipped it (FEEDBACK-rvc, 2026-11-05). The mint floor (BUG-04) still
+    covers numbers no file remembers.
+    """
     max_num = mint_floor(vault_path, prefix)
     width = 2
-    tree = resolve_tree(vault_path)
-    for d in tree_dirs(tree):
-        root = os.path.join(vault_path, d)
-        if not os.path.isdir(root):
-            continue
-        for _, _, files in os.walk(root):
-            for f in files:
-                m = re.match(rf'^{re.escape(prefix)}-(\d+)', f)
-                if m:
-                    digits = m.group(1)
-                    num = int(digits)
-                    # Width follows the vault's own zero-padding on ANY match —
-                    # the floor can exceed every on-disk number (BUG-04) and
-                    # must not silently narrow the format.
-                    width = max(width, len(digits))
-                    if num > max_num:
-                        max_num = num
+    pat = re.compile(rf'^{re.escape(prefix)}-(\d+)')
+    for root, dirs, files in os.walk(vault_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for f in files:
+            m = pat.match(f)
+            if m:
+                digits = m.group(1)
+                num = int(digits)
+                # Width follows the vault's own zero-padding on ANY match —
+                # the floor can exceed every on-disk number (BUG-04) and
+                # must not silently narrow the format.
+                width = max(width, len(digits))
+                if num > max_num:
+                    max_num = num
     return f"{prefix}-{str(max_num + 1).zfill(width)}"
 
 

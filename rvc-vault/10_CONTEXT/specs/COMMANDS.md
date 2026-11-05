@@ -60,21 +60,22 @@ installation and exits without changes.
 ```
 rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]
              [--priority P0|P1|P2|P3|Low|Medium|High|Critical]
-             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--skip-ci]
+             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]
 ```
 Create a new issue. Mints the next ID (`⟨PREFIX⟩-NN`, default `STORY`), writes
 frontmatter (`id`, `title`, `type`, `priority`, `started`), and lands in the
 vault's `create` bucket (default `00_INBOX` on newvault trees). On a tree that
 declares a `block` bucket, legacy priorities translate to P0-P3 and a `status:`
-field is refused (folder owns state). Commits with `[skip ci]` unless `--skip-ci`
-is disabled.
+field is refused (folder owns state). Commits with `[skip ci]` unless
+`--no-skip-ci` (alias `--ci`) is passed to run CI. `--skip-ci` is a deprecated,
+warning alias of `--no-skip-ci` — the old name inverted its own meaning.
 
 ### `rvc issue`
 
 ```
 rvc issue list [⟨status|bucket⟩] [--dir ⟨bucket⟩]
 rvc issue ⟨ID⟩
-rvc issue ⟨ID⟩ ⟨action⟩ [--skip-ci]
+rvc issue ⟨ID⟩ ⟨action⟩ [--no-skip-ci]
 ```
 - `issue list` — list issues; optional positional filters by status alias or bucket,
   `--dir` lists a specific configured bucket.
@@ -123,7 +124,10 @@ Alias for `rvc issue list`.
 rvc search ⟨query⟩
 ```
 Case-insensitive grep over every `.md` file in the vault; prints
-`path:line: content` for matches.
+`path:line: content` for matches. A multi-word query first tries the whole
+phrase per line, then falls back to lines containing every term (substring, so
+`filename` still hits `filenames`); an empty result explains why and hints to
+retry with fewer words.
 
 ### `rvc plate`
 

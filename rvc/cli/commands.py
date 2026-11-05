@@ -55,6 +55,31 @@ def _styled_print(*args, **kwargs):
     _orig_print(styled, **kwargs)
 
 
+class _DeprecatedSkipCI(argparse.Action):
+    """`--skip-ci` inverted its own name: it DISABLES the `[skip ci]` stamp, so
+    an operator wanting a quiet vault commit got a full pipeline instead
+    (FEEDBACK-rvc 2026-11-05). The honest flag is `--no-skip-ci` (alias `--ci`);
+    `--skip-ci` stays as a deprecated, warning alias so old scripts keep working."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print("[RVC] Note: --skip-ci is deprecated and reads backwards — it "
+              "DISABLES the [skip ci] stamp. Use --no-skip-ci (or --ci).",
+              file=sys.stderr)
+        setattr(namespace, self.dest, False)
+
+
+def _add_ci_flag(parser):
+    """Register the CI flag set on a committing subcommand.
+
+    `[skip ci]` is stamped by default; `--no-skip-ci`/`--ci` disables the stamp
+    (the commit then runs CI)."""
+    parser.add_argument("--no-skip-ci", "--ci", action="store_false",
+                        dest="skip_ci", default=True,
+                        help="Run CI on this commit (the [skip ci] stamp is default ON)")
+    parser.add_argument("--skip-ci", action=_DeprecatedSkipCI, nargs=0, dest="skip_ci",
+                        default=True, help=argparse.SUPPRESS)
+
+
 def cmd_help(subgroup=None):
     """Print the nested command reference (derived from COMMANDS.md).
 
@@ -68,7 +93,7 @@ def cmd_help(subgroup=None):
         print()
         print("Usage:")
         print("  rvc issue list [⟨status|bucket⟩] [--dir ⟨bucket⟩]")
-        print("  rvc issue ⟨ID⟩ ⟨action⟩ [--skip-ci]")
+        print("  rvc issue ⟨ID⟩ ⟨action⟩ [--no-skip-ci]")
         print()
         print("Actions (valid set comes from the vault's tree in .rvc-root):")
         print("  triage        move to triage/next bucket")
@@ -85,7 +110,7 @@ def cmd_help(subgroup=None):
         print("  list          list issues; optional positional filters by status alias or bucket")
         print("                --dir <bucket>    list a specific configured bucket (e.g. --dir 30_ACTIVE)")
         print("  <ID> <action> transition the issue through the vault's tree (git mv + commit)")
-        print("  --skip-ci     disable [skip ci] in commit message (default: enabled)")
+        print("  --no-skip-ci  run CI on this commit — the [skip ci] stamp is default ON")
         print()
         print("Note: viewing an issue is done with  rvc get <ID>  — the issue command")
         print("  handles listing and transitions only.")
@@ -127,7 +152,7 @@ def cmd_help(subgroup=None):
         print("Usage:")
         print("  rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
-        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--skip-ci]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]")
         print()
         print("Arguments:")
         print("  ⟨title⟩      issue title")
@@ -137,7 +162,7 @@ def cmd_help(subgroup=None):
         print("  --body       initial issue body text")
         print("  --dir        destination bucket (default: this vault's create/triage bucket)")
         print("  --epic       parent epic name (e.g. EPIC-05)")
-        print("  --skip-ci    disable [skip ci] in the commit message (default: enabled)")
+        print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
     elif subgroup == "get":
         print("rvc get — print the raw issue file")
         print()
@@ -183,7 +208,8 @@ def cmd_help(subgroup=None):
         print("  rvc search ⟨query⟩")
         print()
         print("Arguments:")
-        print("  ⟨query⟩      search text")
+        print("  ⟨query⟩      search text; multi-word queries fall back to all-terms")
+        print("               matching when the whole phrase hits nothing")
     elif subgroup == "git-commit-all":
         print("rvc git-commit-all — commit across dirty submodules and parent repo")
         print()
@@ -263,7 +289,7 @@ def cmd_help(subgroup=None):
         print()
         print("  create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
-        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--skip-ci]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]")
         print("      Create a new issue: mints the next ID and lands in the create bucket.")
         print("      ⟨title⟩      issue title")
         print("      --prefix     ID prefix (default: STORY)")
@@ -272,7 +298,7 @@ def cmd_help(subgroup=None):
         print("      --body       initial issue body text")
         print("      --dir        destination bucket (default: this vault's create/triage bucket)")
         print("      --epic       parent epic name (e.g. EPIC-05)")
-        print("      --skip-ci    disable [skip ci] in the commit message (default: enabled)")
+        print("      --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
         print()
         print("  issue")
         print("      Subcommands: list; ⟨ID⟩ ⟨action⟩ transitions — use 'rvc issue help'.")
@@ -300,7 +326,8 @@ def cmd_help(subgroup=None):
         print()
         print("  search ⟨query⟩")
         print("      Case-insensitive grep over every .md file in the vault.")
-        print("      ⟨query⟩      search text")
+        print("      ⟨query⟩      search text; multi-word queries fall back to")
+        print("                   all-terms matching when the whole phrase hits nothing")
         print()
         print("  plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
         print("        [--log-count ⟨N⟩] [--no-log] [--write]")
@@ -312,14 +339,14 @@ def cmd_help(subgroup=None):
         print("      --no-log     disable the recent activity git log")
         print("      --write      also persist the text rendering to the tree's PLATE.md")
         print()
-        print("  feedback ⟨file⟩ [--to ⟨vault⟩] [--origin ⟨name⟩] [--no-remove] [--skip-ci]")
+        print("  feedback ⟨file⟩ [--to ⟨vault⟩] [--origin ⟨name⟩] [--no-remove] [--no-skip-ci]")
         print("      Move a client's feedback letter (FEEDBACK-<tool>.md) into the RVC vault")
         print("      as a BUG-<n> issue; removes the source letter and prints the submitter's")
         print("      dashboard line (tracked on the client plate via plate.source.<name>=).")
-        print("      --to         RVC vault to ingest into (default: feedback.to= in .rvc-root)")
-        print("      --origin     submitting project (default: derived from the file's vault)")
-        print("      --no-remove  keep the source letter after ingest")
-        print("      --skip-ci    disable [skip ci] in commit messages (default: enabled)")
+        print("      --to          RVC vault to ingest into (default: feedback.to= in .rvc-root)")
+        print("      --origin      submitting project (default: derived from the file's vault)")
+        print("      --no-remove   keep the source letter after ingest")
+        print("      --no-skip-ci  run CI on this commit — the [skip ci] stamp is default ON")
         print()
         print("  doctor [--fix]")
         print("      Audit the vault against its constitution (status:, priority vocabulary).")
@@ -560,8 +587,7 @@ def build_parser():
     issue_p.add_argument("action_or_status", nargs="?")
     issue_p.add_argument("--dir", dest="list_dir", default=None,
                          help="List a specific configured bucket (e.g. --dir 30_ACTIVE)")
-    issue_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
-                         help="Disable [skip ci] in commit message (default: enabled)")
+    _add_ci_flag(issue_p)
     issue_p.set_defaults(handler=handle_issue)
 
     list_p = subparsers.add_parser("list", add_help=False)
@@ -601,8 +627,7 @@ def build_parser():
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue")
     create_p.add_argument("--epic", default="", help="Parent epic name")
-    create_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
-                          help="Disable [skip ci] in commit message (default: enabled)")
+    _add_ci_flag(create_p)
     create_p.set_defaults(handler=handle_create)
 
     feedback_p = subparsers.add_parser("feedback", add_help=False)
@@ -613,8 +638,7 @@ def build_parser():
                             help="Submitting project name (default: derived from the file's vault)")
     feedback_p.add_argument("--no-remove", action="store_true",
                             help="Keep the source letter after ingest")
-    feedback_p.add_argument("--skip-ci", action="store_false", dest="skip_ci", default=True,
-                            help="Disable [skip ci] in commit message (default: enabled)")
+    _add_ci_flag(feedback_p)
     feedback_p.set_defaults(handler=handle_feedback)
 
     search_p = subparsers.add_parser("search", add_help=False)
