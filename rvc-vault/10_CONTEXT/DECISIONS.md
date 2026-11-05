@@ -251,3 +251,10 @@ live decision; compress superseded ones to one line pointing at the resolving co
   of re-filed) and the letter itself was archived superseded with a resolution note —
   same shape as the round-1 letter. A re-ingested letter would double-file every fixed
   item.
+- **Append-prone knowledge files grow in `##` sections.** The context benchmark caught a
+  real trap this round: one long flat append to `GOTCHAS.md` (zero headings — one 9KB
+  retrieval chunk) diluted it enough that the STORY-029 query lost it from top-5 and
+  recall@5 fell to 77%. The BUG files and the archived letter were retrieval-neutral —
+  isolated by reverting each delta in a scratch vault. Fix: new entries go under their
+  own dated heading (a new chunk, not a longer old one). The ranker's b=1.0 length
+  normalization stays as measured in STORY-033.
