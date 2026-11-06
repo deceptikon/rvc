@@ -5,7 +5,7 @@ type: story
 priority: P1
 epic: [[EPIC-001]]
 domain: workflow_meta
-domain_tags: [ask, owed, plate, feedback, protocol]
+domain_tags: [ask, plate, feedback, protocol]
 imported-from: "ADLAI session 2026-09-29 (forensics on the v5.3→v6.0 arena deletion); relates to STORY-024, STORY-025, STORY-030"
 correction: "2026-09-29 — first draft wrongly proposed minting `rvc feedback`; that command already exists as the client→owner INGEST (rvc/feedback.py). Rescoped: ask/answer own the seat→seat direction; feedback owns the client→tool-owner direction."
 started: 2026-09-29
