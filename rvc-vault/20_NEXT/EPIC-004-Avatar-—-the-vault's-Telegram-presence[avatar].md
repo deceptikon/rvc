@@ -5,7 +5,7 @@ type: epic
 priority: P0
 epic: null
 domain: workflow_meta
-domain_tags: [avatar, telegram, arena, presence, notifications]
+domain_tags: [avatar, arena, notifications]
 created: 2026-09-29
 triage: 2026-09-29
 gate: STORY-039
