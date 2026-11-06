@@ -189,11 +189,13 @@ bucket: `status:` fields in live buckets are violations, off-vocabulary
 (no `block` bucket) are exempt.
 Domain drift is a warning: a file named `[corpus]` whose `domain_tags:` no longer
 contains `corpus` is one fact in two places disagreeing. A file whose domain lives
-only in frontmatter is not drift — it is the pre-migration state of the tree, so
-those are counted in one line instead of one warning per file.
+only in frontmatter is not drift — it is the pre-migration state of the open buckets,
+so those are counted in one line instead of one warning per file, and the done lane is
+not asked to rename itself: a closed issue is evidence, not a live surface.
 **Every run rebuilds the domain vocabulary** in `.rvc-root` (see the marker table in
 `PROTOCOL.md`): the census of the open buckets, minus type-as-tag, with spelling
-variants folded onto the commonest. It prints what it wrote (`domains:`), the slugs
+variants folded onto the commonest and the `domain-alias.` rulings applied — a ruled-away
+slug still in use is named until `rvc set` re-tags the file. It prints what it wrote (`domains:`), the slugs
 that look like one domain spelled twice (`merge candidates`), and any label still
 missing. The block is rewritten under the create lock — the marker also carries the
 mint floors, and a lost floor is a duplicate id.

@@ -145,7 +145,14 @@
   Deleting a label retires the slug; a ruling declares its target even with no open work.
 - **The census reads the open buckets only** (`00_INBOX 20_NEXT 30_ACTIVE 40_DECIDE 50_DEFERRED`).
   A tag in `60_DONE` or the archives does not vote, so closing the last issue of a domain shrinks the
-  list. The vocabulary check is in `rvc plate` only — `create`/`set` accept any slug, deliberately.
+  list, and `doctor` does not ask a closed file to rename itself. The vocabulary check is in `rvc plate`
+  only — `create`/`set` accept any slug, deliberately.
+- **A ruling is not a migration.** Adding `domain-alias.owed=ask` takes `owed` off the list at once and
+  leaves every file still carrying it — `doctor` then names them until `rvc set` re-tags them. Land the
+  ruling and the re-tagging in the same session, or the plate reads as a fault report.
+- **`[[stem[slug]]]` is what a healed backlink looks like now** (ADLAI's field report item 3, confirmed
+  here on EPIC-001's children). Obsidian follows it; a stricter link walker may not, so keep bracket
+  pairs out of *titles* — the tail group is the slug's, whatever the name looks like after a rename.
 - **A rendering in the index is an echo competing with the original.** `PLATE.md` is written by
   `rvc plate --write` from the tree it describes. Refreshing it — no real text changed — moved this
   vault's benchmark recall@5 from 85% to 77%: a page of file names and slug counts out-ranks the

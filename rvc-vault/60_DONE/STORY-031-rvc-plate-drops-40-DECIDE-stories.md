@@ -7,8 +7,8 @@ domain: workflow_meta
 domain_tags: ["plate", "rvc", "bug", "cross-vault"]
 origin: "ADLAI vault (Q, 2026-09-16) — found while diffing `rvc plate` against the folder tree"
 related:
-  - "[[STORY-024-Plate-lanes-are-protocol-not-local-law]]"
-  - "[[STORY-030-Cross-vault-finding-delivery]]"
+  - "[[STORY-024-Plate-lanes-are-protocol-not-local-law[plate]]]"
+  - "[[STORY-030-Cross-vault-finding-delivery[cross-vault]]]"
 ---
 
 # STORY-031: `rvc plate` renders no `40_DECIDE` root stories

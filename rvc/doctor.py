@@ -128,6 +128,11 @@ def slug_variants(a, b):
     return min(len(a), len(b)) >= 6 and _slug_distance(a, b) <= 2
 
 
+def domain_census_dirs(tree):
+    """The buckets whose tags vote on the vocabulary (and owe a filename slug)."""
+    return sorted({tree[v] for v in DOMAIN_CENSUS_VERBS if v in tree})
+
+
 def census_domains(vault_path, tree):
     """Census of the open buckets: counts per raw slug, files per slug, the type words.
 
@@ -138,7 +143,7 @@ def census_domains(vault_path, tree):
     in the tool.
     """
     counts, files, type_words, multi = {}, {}, set(), 0
-    for bucket in sorted({tree[v] for v in DOMAIN_CENSUS_VERBS if v in tree}):
+    for bucket in domain_census_dirs(tree):
         root = os.path.join(vault_path, bucket)
         if not os.path.isdir(root):
             continue
@@ -315,11 +320,16 @@ def cmd_doctor(vault_path, fix=False):
                 priority_off = newvault and priority is not None and priority not in P_VOCABULARY
 
                 # Domain checks: the filename slug and the frontmatter field are
-                # one fact in two places, so drift is a per-file warning. A file
-                # that simply has no slug yet is the pre-migration state of the
-                # whole tree (19 of them here) — counted, named once, not spammed.
+                # one fact in two places, so drift is a per-file warning. A file that
+                # has no slug yet is the pre-migration state — counted once, not
+                # spammed — and only in the buckets that still take work: a closed
+                # issue is evidence, and re-stamping its name is history-breaking
+                # churn no reader needs (the census excludes those buckets for the
+                # same reason, so the two rules cannot disagree about what is live).
                 file_domain = _parse_domain_from_filename(fn)
                 fm_tags = frontmatter_domain_tags(text)
+                rel_norm = rel.replace(os.sep, "/")
+                live = any(rel_norm.startswith(b + "/") for b in domain_census_dirs(tree))
                 if file_domain and fm_tags and file_domain not in fm_tags:
                     report["warnings"].append(
                         f"{rel}: domain mismatch — filename '{file_domain}' not in "
@@ -327,7 +337,7 @@ def cmd_doctor(vault_path, fix=False):
                 elif file_domain and not fm_tags:
                     report["warnings"].append(
                         f"{rel}: filename has domain '{file_domain}' but no domain_tags in frontmatter")
-                elif fm_tags and not file_domain:
+                elif fm_tags and not file_domain and live:
                     unslugged.append(rel)
 
                 if not newvault:

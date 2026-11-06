@@ -47,5 +47,5 @@ Harden the Conductor pipeline for daily autonomous use, add real failure-diagnos
 - [[STORY-010-Unit-Test-Foundation]] — Unit Test Foundation
 - [[STORY-011-Parallel-DAG-Execution]] — Parallel DAG Execution in Act Node
 - [[STORY-012-RVC-Context-Caching]] — RVC Context Caching & Token Optimization
-- [[STORY-013-RVC-Security-Performance]] — RVC CLI Security & Performance Hardening
-- [[STORY-014-Real-YAML-Parser]] — Replace Ad-Hoc YAML Parser with Real YAML Library
+- [[STORY-013-RVC-Security-Performance[rvc]]] — RVC CLI Security & Performance Hardening
+- [[STORY-014-Real-YAML-Parser[rvc]]] — Replace Ad-Hoc YAML Parser with Real YAML Library

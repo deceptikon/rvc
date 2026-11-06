@@ -191,3 +191,38 @@ Not done, and it is the vault's to decide, not the tool's: the 18 slugs carry no
 `domain-alias.<x>=<y>` line away from being a ruling; 19 live files still keep their domain in
 frontmatter only. Tests: 175 passed, 1 skipped (context recall@5 back at 85% after pruning the knowledge
 files into their own chunks — the flat-append trap in `GOTCHAS.md`, hit and measured).
+
+## Closed — the four asks landed, and the vocabulary question answered by ruling, not by hand
+
+| Ask | Where it lives now |
+|---|---|
+| 1 — the domain in the filename | `create --domain ⟨slug⟩` stamps the trailing `[slug]`; `rvc set ⟨ID⟩ --domain` moves **only** that group (`git mv` + `[[backlink]]` healing — confirmed here when EPIC-001 was renamed and its children's links followed). Placement: after the id, so `^{prefix}-(\d+)` still anchors. A title that *ends* in a bracket group is the slug's — logged in `GOTCHAS.md`. |
+| 2 — the create flag | plumbed, and multi-slug accepted (`--domain "a, b"` writes the flow list, names the first). |
+| 3 — the vocabulary | **generated, not kept.** `rvc doctor` censuses the open buckets on every run, filters type-as-tag, folds spelling variants, applies the `domain-alias.` rulings, rewrites `domain.<slug>=` in `.rvc-root`. The label after `=` and the alias lines are the only human content, and neither copies a fact the tree already holds. Checked at render, never at create. |
+| 4 — the plate and context line | `DOMAINS` is a per-slug histogram with `undeclared:` and the untagged issues named; `rvc context` prints `- **Domain:** …`, parsed into slugs, inheritance labelled. |
+
+The ruling pass this session folded 18 slugs in use into 11 declared domains: `owed`/`scanner`→`ask`,
+`automation`→`arena`, `turn-runner`→`rvcd`, `presence`/`telegram`→`avatar`, `triage`→`governance`. Each
+line is a claim about what owns an invariant, so it is written as a ruling and not guessed by a string
+distance; the eight live files that still spelled the old way were re-tagged with `rvc set` in the same
+session, which also brought this vault up to ask 1 — every live issue now carries its `[slug]`.
+`doctor` is silent on the done lane: ten closed files keep their historical names, because a closed
+issue is evidence, and the vocabulary would change each time one closed.
+
+```
+DOMAINS  [10 of 10 surfaces tagged, 11 slugs in use — an item may carry several]
+  protocol×6  rvc×5  arena×3  feedback×3  plate×3  ask×2
+  governance×2  notifications×2
+  ×1: avatar  cross-vault  rvcd
+  vocabulary: 11 declared in .rvc-root, every slug in use matches, 7 ruled away
+```
+
+Left open on purpose, and not this letter's subject: ADLAI's field-report item 1 (domain-driven
+**ranking** still needs a boost rule for the matching spec section — the honest fallback the letter
+itself named is that a domain is discoverable by `rvc plate`, which is now true); the plate's overall
+format, filed as STORY-043; and whether `domain_tags` should collapse to one slug per issue, which is
+ADLAI's ritual and not yet this vault's law.
+
+Tests: 178 passed, 1 skipped. Benchmark recall@5: 85% — refreshed renderings are no longer indexed
+(`PLATE.md` excluded, cache v2), and the knowledge files were re-chunked after my own append tripped
+the flat-append trap that `GOTCHAS.md` documents.

@@ -615,3 +615,28 @@ domain_tags: corpus
     assert "tree.start=30_ACTIVE" in text, text
     assert "vault=scratch" in text, text
     assert rvc_cli.resolve_tree(vault)["start"] == "30_ACTIVE", text
+
+
+def test_doctor_lets_the_closed_lane_keep_its_names():
+    """AC5: a done issue is evidence. Stamping its filename is churn no reader needs."""
+    _, vault = make_vault()
+    _write_raw(vault, "60_DONE/STORY-460-Closed.md", """---
+id: STORY-460
+title: Closed
+type: story
+priority: P1
+domain_tags: corpus
+---
+""")
+    _write_raw(vault, "20_NEXT/STORY-461-Open.md", """---
+id: STORY-461
+title: Open
+type: story
+priority: P1
+domain_tags: corpus
+---
+""")
+    report = rvc_cli.cmd_doctor(vault)
+    slug_lines = [w for w in report["warnings"] if "no slug in filename" in w.lower()]
+    assert len(slug_lines) == 1, report["warnings"]
+    assert "STORY-461" in slug_lines[0] and "STORY-460" not in slug_lines[0], slug_lines[0]

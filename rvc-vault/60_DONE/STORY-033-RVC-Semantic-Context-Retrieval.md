@@ -6,7 +6,7 @@ priority: P1
 created: 2026-09-16
 domain: workflow_meta
 domain_tags: ["retrieval", "context", "search", "cli"]
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 aliases:
   - STORY-33
 ---
@@ -87,7 +87,7 @@ def rvc_get_context(
 [Target issue frontmatter and body]
 
 ## 2. Explicit References (Hard Signals)
---- REFERENCE: [[EPIC-001-RVC-Protocol]] ---
+--- REFERENCE: [[EPIC-001-RVC-Protocol[rvc]]] ---
 File: 20_NEXT/EPIC-001-RVC-Protocol.md
 [Reference content...]
 --- END OF REFERENCE ---
