@@ -4,9 +4,9 @@ type: story
 priority: P2
 created: 2026-09-16
 domain: workflow_meta
-domain_tags: ["arena", "rvcd", "turn-runner", "automation"]
+domain_tags: [rvcd, arena]
 imported-from: "ADLAI STORY-106, STORY-109 am. 8"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 deferred: 2026-09-29
 ---
 
