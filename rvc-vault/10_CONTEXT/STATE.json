@@ -1,11 +1,12 @@
 {
-  "active_issue": "",
-  "active_branch": null,
+  "active_issue": "BUG-14",
+  "active_branch": "domain-tags-story",
   "agent": "big-pickle",
   "started_at": "2026-09-29T00:00:00Z",
-  "last_run": "2026-11-06T12:00:00Z",
-  "last_action": "FEEDBACK round 2 done (BUG-05..09); BUG-10 duplicate superseded -> BUG-02; ingest title frontmatter fix; 125 tests green",
-  "next_issue": "STORY-039",
+  "last_run": "2026-11-06T18:43:00Z",
+  "last_action": "domain tags: remove mandatory governance, add plate domain summary, fix set output; 154 tests green",
+  "next_issue": "STORY-044",
   "next_blocked_on": [],
-  "last_qa": "125 passed, 0 failed, 1 skipped (test_rvc_plate needs pytest; not installed by design)"
+  "last_qa": "154 passed, 0 failed, 1 skipped"
+
 }
