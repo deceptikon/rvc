@@ -141,3 +141,8 @@ is ordinary tagging, not tooling, so it does not hold this issue open.
 
 Tests: 167 passed, 1 skipped. Docs: `specs/PROTOCOL.md` (marker key table), `specs/COMMANDS.md`
 (`rvc set`, plate block), `DECISIONS.md`, `GOTCHAS.md`, `STATE.json`.
+
+Closed by `rvc set BUG-14 --domain "rvc, plate, feedback"` — the letter's own id now carries the
+`[rvc]` slug, which is how the `untagged (1): BUG-14` line above disappears from the plate — and
+`rvc issue BUG-14 done`. The 19 off-list slugs and the 19 files whose domain still lives only in
+frontmatter are tagging work for whoever picks the next issue, not tooling.
