@@ -5,6 +5,7 @@ type: bug
 priority: P2
 origin: adlai-vault
 submitted: 2026-11-06
+domain_tags: [rvc, plate, feedback]
 ---
 
 # BUG-14: FEEDBACK-rvc — deposit from ADLAI (STORY-162)
