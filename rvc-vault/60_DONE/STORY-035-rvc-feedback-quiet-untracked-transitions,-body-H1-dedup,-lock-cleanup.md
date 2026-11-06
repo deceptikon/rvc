@@ -3,7 +3,7 @@ id: STORY-035
 title: rvc feedback: quiet untracked transitions, body H1 dedup, lock cleanup
 type: story
 priority: P1
-epic: [[EPIC-001-RVC-Protocol]]
+epic: [[EPIC-001-RVC-Protocol[rvc]]]
 started: 2026-09-19
 ---
 

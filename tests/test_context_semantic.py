@@ -376,3 +376,25 @@ def test_soft_matches_yield_section_excerpts_not_full_documents():
     assert "Crucial Section" in out
     assert "flock secret answer" in out
     assert "noise noise noise" not in out
+
+
+def test_plate_rendering_is_not_indexed_as_knowledge():
+    """STORY-034 AC3, in the index: PLATE.md renders the tree, it is not a document about it.
+
+    Measured on this vault 2026-11-06: refreshing the plate — no change to any real text —
+    moved benchmark recall@5 from 85% to 77%, because a page of file names and slug counts
+    out-ranks the documents it summarizes.
+    """
+    _, vault = make_vault()
+    write_issue(vault, "20_NEXT/STORY-001-Slugs.md",
+                {"id": "STORY-001", "title": "Slugs"}, "## Problem\n\nslug soup\n")
+    write_doc(vault, "10_CONTEXT/KNOWLEDGE.md",
+              "# Knowledge\n\n## Slugs\n\nslug soup explained here\n")
+    write_doc(vault, "10_CONTEXT/PLATE.md",
+              "# PLATE\n\nslug soup 20_NEXT/STORY-001-Slugs.md slug soup slug soup\n")
+    scanned = rvc_cli._context_scan(vault)
+    assert not [p for p in scanned if p.endswith("PLATE.md")], scanned
+    assert "10_CONTEXT/KNOWLEDGE.md" in scanned, scanned
+    cache = rvc_cli.context_cache_update(vault, force=True)
+    assert not [k for k, meta in cache["docs"].items()
+                if meta["path"].endswith("PLATE.md")], cache["docs"]

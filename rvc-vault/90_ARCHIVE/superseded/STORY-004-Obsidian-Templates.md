@@ -3,7 +3,7 @@ id: STORY-004
 type: story
 priority: P2
 assignee: "@human"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 created: 2026-04-23
 title: Obsidian-Templates
 tags: [issue, workflow]

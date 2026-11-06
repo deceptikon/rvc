@@ -7,7 +7,7 @@ created: 2026-04-23
 title: RVC-Protocol
 tags: [issue, workflow]
 domain: workflow_meta
-domain_tags: ["rvc", "protocol", "epic"]
+domain_tags: [rvc, protocol]
 aliases:
   - EPIC-001
 deferred: 2026-09-29

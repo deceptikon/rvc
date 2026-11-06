@@ -8,7 +8,7 @@ created: 2026-06-28
 tags: [issue, rvc, workflow]
 title: RVC-Security-Performance
 domain: workflow_meta
-domain_tags: ["rvc", "protocol", "story"]
+domain_tags: [rvc, protocol]
 aliases:
   - STORY-013
 rescoped: 2026-09-29

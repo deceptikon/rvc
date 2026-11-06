@@ -10,7 +10,8 @@ from rvc.core import (
 )
 from rvc.git import cmd_git_commit_all
 from rvc.issues import (
-    cmd_get, cmd_issue_action, cmd_issue_list, cmd_create_issue, cmd_search
+    cmd_get, cmd_issue_action, cmd_issue_list, cmd_create_issue, cmd_search,
+    cmd_set_issue
 )
 from rvc.feedback import cmd_feedback
 from rvc.context import (
@@ -152,7 +153,8 @@ def cmd_help(subgroup=None):
         print("Usage:")
         print("  rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
-        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]")
+        print("             [--domain ⟨slug⟩[,…]] [--no-skip-ci]")
         print()
         print("Arguments:")
         print("  ⟨title⟩      issue title")
@@ -162,6 +164,20 @@ def cmd_help(subgroup=None):
         print("  --body       initial issue body text")
         print("  --dir        destination bucket (default: this vault's create/triage bucket)")
         print("  --epic       parent epic name (e.g. EPIC-05)")
+        print("  --domain     domain slug(s), comma-separated; the first is the file-name slug")
+        print("               (rvc plate names the ones .rvc-root does not declare; create never does)")
+        print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
+    elif subgroup == "set":
+        print("rvc set — edit mutable fields of an existing issue")
+        print()
+        print("Usage:")
+        print("  rvc set ⟨ID⟩ [--domain ⟨slug⟩[,…]] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…] [--no-skip-ci]")
+        print()
+        print("Arguments:")
+        print("  ⟨ID⟩         issue id (e.g. STORY-042)")
+        print("  --domain     set or change the domain slug(s); an empty value clears it and renames")
+        print("  --epic       set or change the parent epic; an empty value clears it")
+        print("  --priority   set or change priority")
         print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
     elif subgroup == "get":
         print("rvc get — print the raw issue file")
@@ -185,6 +201,9 @@ def cmd_help(subgroup=None):
         print("  --log-count  number of recent vault commits to show (default: 5)")
         print("  --no-log     disable the recent activity git log")
         print("  --write      also persist the text rendering to the tree's PLATE.md")
+        print()
+        print("Also prints a DOMAINS histogram: per-slug counts, the untagged surfaces named,")
+        print("and the slugs off the vocabulary that `rvc doctor` writes into .rvc-root.")
     elif subgroup == "doctor":
         print("rvc doctor — audit the vault against its constitution")
         print()
@@ -193,6 +212,8 @@ def cmd_help(subgroup=None):
         print()
         print("Arguments:")
         print("  --fix        strip status: and fold priorities in place (block-bucket trees)")
+        print("               the domain vocabulary is rebuilt from the tree on every run,")
+        print("               with or without --fix — it is a rendering, not a repair")
     elif subgroup == "rescan":
         print("rvc rescan — broad vault normalization and cache rebuild")
         print()
@@ -289,7 +310,8 @@ def cmd_help(subgroup=None):
         print()
         print("  create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
-        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]")
+        print("             [--domain ⟨slug⟩[,…]] [--no-skip-ci]")
         print("      Create a new issue: mints the next ID and lands in the create bucket.")
         print("      ⟨title⟩      issue title")
         print("      --prefix     ID prefix (default: STORY)")
@@ -298,6 +320,16 @@ def cmd_help(subgroup=None):
         print("      --body       initial issue body text")
         print("      --dir        destination bucket (default: this vault's create/triage bucket)")
         print("      --epic       parent epic name (e.g. EPIC-05)")
+        print("      --domain     domain slug(s), comma-separated; the first is the file-name slug")
+        print("      --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
+        print()
+        print("  set ⟨ID⟩ [--domain ⟨slug⟩[,…]] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…]")
+        print("           [--no-skip-ci]")
+        print("      Edit mutable fields of an existing issue (domain, epic, priority).")
+        print("      ⟨ID⟩         issue id (e.g. STORY-042)")
+        print("      --domain     set or change the domain slug(s); an empty value clears it and renames")
+        print("      --epic       set or change the parent epic; an empty value clears it")
+        print("      --priority   set or change priority")
         print("      --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
         print()
         print("  issue")
@@ -332,6 +364,8 @@ def cmd_help(subgroup=None):
         print("  plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
         print("        [--log-count ⟨N⟩] [--no-log] [--write]")
         print("      Render the plate: lanes computed from folders, priorities and open asks.")
+        print("      Lanes, a DOMAINS histogram (per-slug counts, untagged named) and the")
+        print("      slugs undeclared against .rvc-root's domain.⟨slug⟩= list, if it has one.")
         print("      --as         canonicalize this handle for the owed-turn lane")
         print("      --format     output format (default: text)")
         print("      --stale-days overdue threshold in days (default: 7)")
@@ -446,6 +480,22 @@ def handle_create(args):
         directory=args.directory,
         epic=args.epic,
         skip_ci=args.skip_ci,
+        domain=args.domain,
+    )
+
+
+def handle_set(args):
+    if args.issue_id in ("help", "--help", "-h"):
+        cmd_help("set")
+        return
+    vault = _require_vault(args.path)
+    cmd_set_issue(
+        vault,
+        args.issue_id,
+        domain=args.domain,
+        epic=args.epic,
+        priority=args.priority,
+        skip_ci=args.skip_ci,
     )
 
 
@@ -483,6 +533,27 @@ def handle_rescan(args):
         print(f"[RVC] Context cache rebuilt: {CONTEXT_CACHE_NAME}")
 
 
+def _print_domain_audit(domains):
+    """One line on what the vocabulary refresh did, plus the merge candidates."""
+    if not domains or (not domains.get("declared") and not domains.get("dropped")):
+        return
+    total = len(domains["declared"])
+    parts = [f"{total} slug{'s' if total != 1 else ''} in .rvc-root",
+             "rebuilt now" if domains["written"] else "unchanged"]
+    if domains["standing"]:
+        parts.append(f"{len(domains['standing'])} kept by their label alone, nothing open")
+    if domains["unlabeled"]:
+        parts.append(f"{len(domains['unlabeled'])} without a label"
+                     + (f": {', '.join(domains['unlabeled'][:3])}"
+                        if len(domains["unlabeled"]) <= 3 else ""))
+    print("[doctor] domains:    " + "; ".join(parts))
+    if domains["candidates"]:
+        shown = ", ".join(f"{a}~{b}" for a, b in domains["candidates"][:4])
+        rest = f" … +{len(domains['candidates']) - 4} more" \
+            if len(domains["candidates"]) > 4 else ""
+        print(f"[doctor] merge candidates (a ruling, not a defect): {shown}{rest}")
+
+
 def handle_doctor(args):
     vault = _require_vault(args.path)
     report = cmd_doctor(vault, fix=args.fix)
@@ -492,6 +563,7 @@ def handle_doctor(args):
         print(f"[doctor] warning:   {w}")
     for fx in report["fixed"]:
         print(f"[doctor] fixed:     {fx}")
+    _print_domain_audit(report.get("domains"))
     if report["violations"]:
         print(f"[doctor] {len(report['violations'])} violation(s) found — "
               f"run `rvc doctor --fix` on a block-bucket tree")
@@ -627,8 +699,21 @@ def build_parser():
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue")
     create_p.add_argument("--epic", default="", help="Parent epic name")
+    create_p.add_argument("--domain", default="",
+                          help="Domain slug(s), comma-separated; the first becomes the filename slug "
+                               "(validated by 'rvc plate', never required)")
     _add_ci_flag(create_p)
     create_p.set_defaults(handler=handle_create)
+
+    set_p = subparsers.add_parser("set", add_help=False)
+    set_p.add_argument("issue_id", help="Issue ID to edit (e.g. STORY-042)")
+    set_p.add_argument("--domain", default=None,
+                       help="Set or change the domain slug(s); empty clears it")
+    set_p.add_argument("--epic", default=None, help="Set or change parent epic")
+    set_p.add_argument("--priority", default=None, choices=["P0", "P1", "P2", "P3", "Low", "Medium", "High", "Critical"],
+                       help="Change priority")
+    _add_ci_flag(set_p)
+    set_p.set_defaults(handler=handle_set)
 
     feedback_p = subparsers.add_parser("feedback", add_help=False)
     feedback_p.add_argument("file", help="Path to the feedback letter (e.g. 00_INBOX/FEEDBACK-rvc.md)")

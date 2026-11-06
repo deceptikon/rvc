@@ -798,3 +798,173 @@ def bump_mint_floor(vault_path, prefix, num):
     # lock must never see the marker truncated empty mid-rewrite.
     _atomic_write_text(root_file, "\n".join(lines) + "\n")
     return root_file
+
+
+def parse_domain_tags(raw):
+    """Split one `domain_tags:` value into slugs — `a`, `[a, b]`, `["a", "b"]`, `a, b`.
+
+    The field is multi-valued in the wild (ADLAI, and this vault's own 130
+    archived issues) and rvc's own create/set write a bare slug, so every
+    reader has to accept both shapes or each distinct spelling becomes its own
+    "domain" — which is exactly how the plate's grouping turned into a dump.
+    """
+    text = (raw or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    tags = []
+    for part in text.split(","):
+        part = part.strip().strip("\"'").strip()
+        if part and part not in tags:
+            tags.append(part)
+    return tags
+
+
+def frontmatter_domain_tags(text):
+    """All domain slugs in a file's frontmatter: inline value or block list.
+
+    `plate_frontmatter` is a scalar reader, so `domain_tags:` followed by
+    `  - rvc` reads back as empty — the block form is what the older issues in
+    this vault use, and it was invisible to the plate, doctor and context.
+    """
+    if not text.startswith("---"):
+        return []
+    end = text.find("\n---", 3)
+    if end == -1:
+        return []
+    tags, in_block = [], False
+    for line in text[3:end].splitlines():
+        if in_block:
+            item = re.match(r"^\s*[-*]\s*(.+)$", line)
+            if item:
+                slug = item.group(1).strip().strip("\"'").strip()
+                if slug and slug not in tags:
+                    tags.append(slug)
+                continue
+            in_block = False
+        match = re.match(r"^domain_tags\s*:\s*(.*)$", line, re.I)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        if value:
+            for tag in parse_domain_tags(value):
+                if tag not in tags:
+                    tags.append(tag)
+        else:
+            in_block = True
+    return tags
+
+
+def read_domain_vocabulary(vault_path):
+    """The vault's declared domain slugs: `domain.<slug>=<label>` lines in `.rvc-root`.
+
+    Ask 3 of the BUG-14 letter asked for a controlled vocabulary. A separate
+    `Story-Domains.md` would be a second place to remember, and parsing prose
+    for a list is a parser that always disagrees with itself; the marker already
+    owns everything machine-readable about this vault (`tree.<verb>`, `mint.<PREFIX>`,
+    `alias.*`, `plate.source.*`), so the list lives there and nothing else has to
+    be discovered. No lines means no vocabulary — the plate says so instead of
+    inventing a law the vault never published. Validation is the plate's job, not
+    `create`'s: a slug typed in good faith is a signal to reconcile, not a
+    reason to refuse the mint.
+    """
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    vocab = {}
+    if not os.path.exists(root_file):
+        return vocab
+    with open(root_file, "r", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or not line.startswith("domain.") or "=" not in line:
+                continue
+            key, _, label = line.partition("=")
+            slug = key[len("domain."):].strip()
+            if slug:
+                vocab[slug] = label.strip()
+    return vocab
+
+
+def domain_slug_key(slug):
+    """Case- and separator-folded form of a slug (`RVC_Vault` → `rvc-vault`)."""
+    return re.sub(r"[\s_\-]+", "-", (slug or "").strip().lower()).strip("-")
+
+
+def read_domain_aliases(vault_path):
+    """The human half of the vocabulary: `domain-alias.<rejected>=<kept>` in `.rvc-root`.
+
+    The generated list can only reject what is mechanically wrong (a type used as a
+    tag, the same word spelled twice). Deciding that `citation` *is* `review_queue`
+    is a ruling, and a ruling has to live somewhere — so it lives next to the
+    rendering it controls, in the marker the tool already reads. `rvc doctor` applies
+    it on every refresh and `rvc plate` prints the arrow instead of a bare rejection.
+    """
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    aliases = {}
+    if not os.path.exists(root_file):
+        return aliases
+    with open(root_file, "r", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or not line.startswith("domain-alias.") or "=" not in line:
+                continue
+            key, _, target = line.partition("=")
+            rejected = key[len("domain-alias."):].strip()
+            target = target.strip()
+            if rejected and target:
+                aliases[rejected] = target
+    return aliases
+
+
+# The generated header of the domain block, recognised (and rewritten) on every
+# refresh. Hand-written prose in this region is *not* detected: the 2026-11-06
+# migration of the hand-kept list was a manual edit, deliberately one-off.
+DOMAIN_BLOCK_NOTES = (
+    "# Domain vocabulary — GENERATED by `rvc doctor` from the tags in the open buckets.",
+    "# Do not hand-edit the list: it is a rendering of the tree, not a second source of",
+    "# truth. Type-as-tag slugs and spelling variants are filtered out; a slug with nothing",
+    "# open in it survives only because a human wrote what it owns — the label is the claim.",
+    "# `rvc plate` validates live tags against this list; `domain-alias.<old>=<kept>` lines",
+    "# anywhere in the marker are rulings the refresh applies instead of second-guessing.",
+)
+
+
+def write_domain_vocabulary(vault_path, entries):
+    """Replace the `domain.<slug>=` block in the effective .rvc-root.
+
+    The block is a *rendering* of the tree, written by `rvc doctor` from the tags
+    actually in use: a hand-kept vocabulary would be exactly the second source of
+    truth the BUG-14 letter warns about (one fact, two places, disagreeing). The
+    label after `=` stays human-written; a slug that leaves the live tree leaves
+    the list with it, and a slug that appears is declared the next `rvc doctor`.
+
+    `entries` = [(slug, label), ...], written in the given order. Returns the
+    marker path, or None when there is nothing to write (no tagged surfaces, or
+    the marker already says exactly this — no touch, no churn, no empty block).
+    """
+    if not entries:
+        return None
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    lines = []
+    if os.path.exists(root_file):
+        try:
+            with open(root_file, "r", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return None
+    keep = [line for line in lines
+            if not line.strip().startswith("domain.")
+            and line.strip() not in DOMAIN_BLOCK_NOTES]
+    while keep and not keep[-1].strip():
+        keep.pop()
+    block = list(DOMAIN_BLOCK_NOTES) + [f"domain.{slug}={label}" for slug, label in entries]
+    out = "\n".join(keep + [""] + block) + "\n" if keep else "\n".join(block) + "\n"
+    if lines and "\n".join(lines) + "\n" == out:
+        return None
+    _atomic_write_text(root_file, out)
+    return root_file
+
+
+def _parse_domain_from_filename(filename):
+    """Extract [domain] suffix from a filename stem, or None."""
+    stem = filename.rsplit(".md", 1)[0] if filename.endswith(".md") else filename
+    m = re.search(r"\[([^\]]+)\]$", stem)
+    return m.group(1) if m else None

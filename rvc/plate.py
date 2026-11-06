@@ -7,7 +7,11 @@ import json
 import datetime as dt
 import subprocess
 
-from rvc.core import resolve_tree, tree_dirs, find_file_by_id, marker_file
+from rvc.core import (
+    resolve_tree, tree_dirs, find_file_by_id, marker_file,
+    frontmatter_domain_tags, read_domain_vocabulary, read_domain_aliases,
+    domain_slug_key,
+)
 
 PLATE_ASK_LINE_RE = re.compile(r"^\s*-\s*\[ \]\s*(.*)$")
 PLATE_HANDLE_RE = re.compile(r"@([\w.+-]+)")
@@ -16,6 +20,17 @@ PLATE_HEADER_RE = re.compile(r"^##\s+([^@\n]+?)\s*@\s*(\d{4}-\d{2}-\d{2})", re.M
 PLATE_DATE_RE = re.compile(r"^\s*(?:updated|date|created)\s*:\s*(\d{4}-\d{2}-\d{2})\s*$", re.M)
 PLATE_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 PLATE_ISSUE_TYPES = ("story", "epic", "bug", "task")
+# Domain rows join on the id when the surface has one — `STORY-013`, not a
+# 70-character filename. The lanes already carry paths; this section is an index.
+PLATE_ITEM_ID_RE = re.compile(r"^([A-Z][A-Z0-9_]*-\d+)")
+# The DOMAINS block is a histogram, not a listing: slugs carrying more than one
+# item get a count entry, the ×1 tail is named and then folded, and file names
+# never appear — they are already in the lanes above. Both rows wrap at width,
+# so a 30-domain vault renders the same four lines a 6-domain one does.
+PLATE_DOMAIN_LINE_WIDTH = 60
+PLATE_DOMAIN_SINGLETONS_SHOWN = 12
+PLATE_DOMAIN_UNTAGGED_SHOWN = 8
+PLATE_DOMAIN_UNDECLARED_SHOWN = 8
 
 
 def read_plate_config(vault_path):
@@ -144,6 +159,7 @@ def plate_surface(fpath, vault_path, aliases):
         "name": name,
         "type": type_name,
         "priority": fields.get("priority", ""),
+        "domain_tags": frontmatter_domain_tags(text),
         "is_issue": type_name in PLATE_ISSUE_TYPES or name.startswith(("STORY-", "EPIC-")),
         "asks": plate_asks(text, aliases),
         "open_boxes": len(re.findall(r"^\s*(?:[-*]|\d+\.)\s*\[ \]", text, re.M)),
@@ -151,6 +167,28 @@ def plate_surface(fpath, vault_path, aliases):
         "last": plate_last_activity(text, fields),
         "last_speaker": headers[-1][0].strip() if headers else "",
     }
+
+
+def _plate_rows(entries, width=PLATE_DOMAIN_LINE_WIDTH):
+    """Pack short entries into rows of at most `width` characters (two-space separated)."""
+    rows, row, used = [], [], 0
+    for entry in entries:
+        need = len(entry) + (2 if row else 0)
+        if row and used + need > width:
+            rows.append("  ".join(row))
+            row, used, need = [], 0, len(entry)
+        row.append(entry)
+        used += need
+    if row:
+        rows.append("  ".join(row))
+    return rows
+
+
+def _plate_emit(lines, entries, first="  ", width=PLATE_DOMAIN_LINE_WIDTH, cont=None):
+    """Append wrapped `entries` to `lines`; continuation rows align under `first`."""
+    cont = " " * len(first) if cont is None else cont
+    for i, row in enumerate(_plate_rows(entries, width)):
+        lines.append((first if i == 0 else cont) + row)
 
 
 def get_recent_vault_commits(vault_path, count=5):
@@ -331,6 +369,39 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
 
     recent_commits = get_recent_vault_commits(vault_path, count=log_count)
 
+    # Domain histogram: one row per slug, items counted not enumerated. Grouping
+    # on the raw frontmatter string made every multi-tag issue its own "domain"
+    # and printed full file names — a dump of the tag field, not a summary.
+    domain_map = {}  # slug -> [item label, ...]
+    untagged_labels, untagged_issues = [], []
+    tagged = 0
+    for surface in surfaces:
+        tags = surface["domain_tags"]
+        id_match = PLATE_ITEM_ID_RE.match(surface["name"])
+        label = id_match.group(1) if id_match else surface["name"]
+        if tags:
+            tagged += 1
+        else:
+            untagged_labels.append(label)
+            if surface["is_issue"]:
+                untagged_issues.append(label)
+        for tag in tags:
+            domain_map.setdefault(tag, []).append(label)
+    domain_counts = sorted(
+        ((tag, names) for tag, names in domain_map.items()),
+        key=lambda kv: (-len(kv[1]), kv[0]),
+    )
+    untagged = len(surfaces) - tagged
+    # Ask 3, relocated: the vocabulary is *declared* in `.rvc-root` (the file the
+    # tool already reads law from — tree verbs, mint floors, aliases) and checked
+    # only here, at render time. No second file, no markdown parser, and nothing
+    # refused at create: an undeclared slug is a decision to make, not a mint to
+    # block. No `domain.` lines means no vocabulary and the plate says so.
+    vocabulary = read_domain_vocabulary(vault_path)
+    ruled = {domain_slug_key(src): tgt for src, tgt in read_domain_aliases(vault_path).items()}
+    undeclared = [dict(domain=tag, count=len(names))
+                  for tag, names in domain_counts if tag not in vocabulary]
+
     if fmt == "json":
         payload = {
             "vault": vault_path,
@@ -339,6 +410,23 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             "today": today.isoformat(),
             "identity_lanes": bool(me),
             "recent_activity": recent_commits,
+            "domains": {
+                "surfaces": len(surfaces),
+                "tagged": tagged,
+                "untagged": untagged,
+                "untagged_items": sorted(untagged_labels),
+                "vocabulary": {
+                    "declared": len(vocabulary),
+                    "slugs": [{"domain": slug, "label": label}
+                              for slug, label in sorted(vocabulary.items())],
+                    "aliases": [{"slug": src, "into": tgt}
+                                for src, tgt in sorted(ruled.items())],
+                },
+                "undeclared": [{**row, "into": ruled.get(domain_slug_key(row["domain"]))}
+                               for row in undeclared],
+                "slugs": [{"domain": tag, "count": len(names), "items": sorted(names)}
+                          for tag, names in domain_counts],
+            },
             "lanes": {
                 key: [
                     {k: (v.isoformat() if isinstance(v, dt.date) else v) for k, v in row.items() if k != "asks"}
@@ -390,6 +478,58 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                 lines.append(f"  {row['name']}  type={row['type'] or '—'}")
             else:
                 lines.append(f"  {row['name']}  pri={row['priority'] or '—'}")
+
+    # Domain histogram — counts only; the rows themselves live in the lanes above.
+    if surfaces and (domain_counts or untagged):
+        slug_word = "slug" if len(domain_counts) == 1 else "slugs"
+        lines.append(f"\nDOMAINS  [{tagged} of {len(surfaces)} surfaces tagged, "
+                     f"{len(domain_counts)} {slug_word} in use — an item may carry several]")
+        common = [f"{tag}×{len(names)}" for tag, names in domain_counts if len(names) > 1]
+        singletons = [tag for tag, names in domain_counts if len(names) == 1]
+        _plate_emit(lines, common)
+        if singletons:
+            shown = singletons[:PLATE_DOMAIN_SINGLETONS_SHOWN]
+            rest = f" … +{len(singletons) - len(shown)} more" \
+                if len(singletons) > len(shown) else ""
+            _plate_emit(lines, shown, first="  ×1: ",
+                        width=PLATE_DOMAIN_LINE_WIDTH - 6)
+            lines[-1] += rest
+        if untagged_labels:
+            # The teeth: an untagged surface is a domain nobody will ever look at, so
+            # the count comes with names. Only *issues* are named — `rvc set ⟨ID⟩` has
+            # no handle for a parked essay, and a wall of file names is the noise this
+            # block was cut down from.
+            if untagged_issues:
+                named = sorted(untagged_issues)
+                shown = named[:PLATE_DOMAIN_UNTAGGED_SHOWN]
+                rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
+                _plate_emit(lines, shown, first=f"  untagged ({len(named)}): ",
+                            width=PLATE_DOMAIN_LINE_WIDTH)
+                extra = (f" (+{len(untagged_labels) - len(untagged_issues)} non-issue surfaces)"
+                         if len(untagged_labels) > len(untagged_issues) else "")
+                lines[-1] += rest + extra + " — rvc set ⟨ID⟩ --domain ⟨slug⟩"
+            else:
+                lines.append(f"  untagged: {untagged} non-issue surfaces "
+                             "(specs and letters may carry no domain)")
+        if vocabulary:
+            if undeclared:
+                named = []
+                for row in undeclared:
+                    target = ruled.get(domain_slug_key(row["domain"]))
+                    entry = f"{row['domain']}×{row['count']}"
+                    named.append(f"{entry}→{target}" if target else entry)
+                shown = named[:PLATE_DOMAIN_UNDECLARED_SHOWN]
+                rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
+                _plate_emit(lines, shown, first="  undeclared: ",
+                            width=PLATE_DOMAIN_LINE_WIDTH)
+                lines[-1] += rest + " — off the .rvc-root list (rvc doctor rebuilds it)"
+            else:
+                extra = f", {len(ruled)} ruled away" if ruled else ""
+                lines.append(f"  vocabulary: {len(vocabulary)} declared in .rvc-root, "
+                             f"every slug in use matches{extra}")
+        else:
+            lines.append("  vocabulary: none declared — rvc doctor writes this list "
+                         "from the live buckets")
 
     if external:
         lines.append("\nEXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)")

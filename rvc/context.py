@@ -8,11 +8,15 @@ import math
 import hashlib
 import sqlite3
 
-from rvc.core import resolve_tree, tree_dirs, find_file_by_id, build_vault_index, _find_in_index
+from rvc.core import (resolve_tree, tree_dirs, find_file_by_id, build_vault_index,
+                      _find_in_index, frontmatter_domain_tags)
 from rvc.plate import plate_frontmatter
 
 CONTEXT_CACHE_NAME = ".rvc-context-cache.sqlite"
-CONTEXT_CACHE_VERSION = 1
+# Bumped to 2 with the rendering exclusion: a cache built from PLATE.md chunks must not keep
+# serving them after the rule changes (a version mismatch cold-starts, which is exactly it).
+CONTEXT_CACHE_VERSION = 2
+CONTEXT_EXCLUDED_RENDERINGS = {"PLATE.md"}
 CONTEXT_DEFAULT_TOP_K = 3
 CONTEXT_DEFAULT_BUDGET = 12000
 CONTEXT_BM25_K1 = 1.5
@@ -175,7 +179,7 @@ def _context_goal_summary(text):
     return "\n".join(parts)
 
 
-def _context_target_summary(rel_path, text):
+def _context_target_summary(rel_path, text, effective_domain=None):
     """Clean high-density target issue summary: metadata + Why/Problem + Acceptance Criteria."""
     raw, body = _context_split_frontmatter(text)
     fields = plate_frontmatter(text)
@@ -186,6 +190,8 @@ def _context_target_summary(rel_path, text):
     header_lines = [
         f"- **State:** `{state}` | **Priority:** `{priority}` | **Type:** `{itype}` | **File:** `{rel_path}`"
     ]
+    if effective_domain:
+        header_lines.append(f"- **Domain:** `{effective_domain}`")
 
     sections = re.split(r"(?m)^(#{1,6}\s+.*)$", body)
     kept = []
@@ -329,12 +335,20 @@ def _context_read(vault_path, rel_path):
 
 
 def _context_scan(vault_path):
-    """{rel_path: (mtime, size)} for every .md file (hidden dirs skipped)."""
+    """{rel_path: (mtime, size)} for every .md file (hidden dirs skipped).
+
+    Renderings are not knowledge. `PLATE.md` is written by `rvc plate --write` from the tree it
+    describes — a page of file names, lane labels and slug counts. Indexing it lets that echo
+    out-rank the documents it summarizes: refreshing the plate moved this vault's benchmark
+    recall@5 from 85% to 77% with no change to any real text (measured 2026-11-06). The
+    constitution already says the plate is "a rendering, not a record" (STORY-034 AC3); the
+    index now agrees.
+    """
     found = {}
     for root, dirs, files in os.walk(vault_path):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in files:
-            if not name.endswith(".md"):
+            if not name.endswith(".md") or name in CONTEXT_EXCLUDED_RENDERINGS:
                 continue
             path = os.path.join(root, name)
             try:
@@ -911,13 +925,34 @@ def cmd_context(vault_path, item_id, top_k=CONTEXT_DEFAULT_TOP_K,
                 "form": "full",
             })
 
+    # Resolve effective domain: own domain_tags > epic's domain_tags. Parsed into
+    # slugs so the line reads `rvc, protocol` and not the raw `["rvc", "protocol"]`,
+    # and inheritance is labelled — a domain read off the epic is not the story's own claim.
+    target_fm = plate_frontmatter(content)
+    domain_tags = frontmatter_domain_tags(content)
+    domain_source = ""
+    if not domain_tags:
+        epic_raw = target_fm.get("epic", "")
+        if epic_raw:
+            epic_name = epic_raw.strip("[] ")
+            epic_path = find_file_by_id(vault_path, epic_name)
+            if epic_path:
+                epic_text = _context_read(vault_path,
+                                          os.path.relpath(epic_path, vault_path).replace(os.sep, "/"))
+                if epic_text:
+                    domain_tags = frontmatter_domain_tags(epic_text)
+                    domain_source = epic_name
+    effective_domain = ", ".join(domain_tags)
+    if effective_domain and domain_source:
+        effective_domain += f" (inherited from {domain_source})"
+
     target_block = {
         "kind": "target",
         "header": "",
         "footer": "",
         "meta": (),
         "text": content,
-        "summary": _context_target_summary(rel_path, content),
+        "summary": _context_target_summary(rel_path, content, effective_domain),
         "form": "full",
     }
     print(_context_assemble(target_id, target_title, target_block, hard_blocks,

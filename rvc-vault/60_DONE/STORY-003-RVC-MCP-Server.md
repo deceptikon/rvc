@@ -3,7 +3,7 @@ id: STORY-003
 type: story
 priority: P0
 assignee: "@ai-dev"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 created: 2026-04-23
 title: RVC-MCP-Server
 tags: [issue, workflow]

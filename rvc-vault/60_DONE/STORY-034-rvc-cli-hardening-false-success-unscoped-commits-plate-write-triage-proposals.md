@@ -6,7 +6,7 @@ priority: P1
 created: 2026-09-17
 domain: workflow_meta
 domain_tags: ["rvc", "cli", "bug", "triage", "plate", "git"]
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 origin: "FEEDBACK-rvc.md (2026-09-17) — four live defects/hardening asks from a single transition session"
 related:
   - "[[STORY-027-Transition-commits-should-skip-ci]]"

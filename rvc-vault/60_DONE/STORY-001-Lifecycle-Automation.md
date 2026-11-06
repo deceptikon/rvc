@@ -3,7 +3,7 @@ id: STORY-001
 type: story
 priority: P1
 assignee: "@ai-dev"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 created: 2026-04-23
 title: Lifecycle-Automation
 tags: [issue, workflow]
