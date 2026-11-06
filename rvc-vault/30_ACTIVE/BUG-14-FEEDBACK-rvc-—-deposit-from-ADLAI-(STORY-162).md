@@ -60,3 +60,23 @@ Friction, not a blocker: the tag was settable by hand for a year and unsurfaced 
 stopped meaning anything — the failure mode is a missing ritual with no mechanical teeth behind it, and a
 fact stored where nobody looks.
 
+---
+
+## Field report from ADLAI's STORY-162 run (2026-11-06, first consumer)
+
+Used `rvc set --domain` to tag all 28 live ADLAI issues. What worked: scalar write, filename stamping,
+`[[…]]` wikilink healing on rename (verified: EPIC-11's three children followed their epic's rename),
+`rvc get`/`context` id resolution intact, and the `**Domain:**` echo in the context header (ask 4). Three
+observations for the follow-up:
+
+1. **Ranking is unchanged by the tag.** For one `review_queue`, one `eval` and one `retrieval` issue,
+   `rvc context` does not rank the matching `Story-Domains.md` section into the top matches (0 hits on
+   all three) — the slugs enter the weights (`context.py:44,87-88`) but a vocabulary spec is thin against
+   content-dense files. If domain-driven ranking is a goal, it needs a boost rule for the matching spec
+   section, or the honest fallback: domain is discoverable by `rvc plate` grouping, not ranking.
+2. **Titles with brackets get two groups.** `STORY-151-Own-the-huggingface-hub[cli]-…[runtime].md` — a
+   pre-existing `[cli]` in the title plus the domain stamp. Start-anchored id resolution is unaffected,
+   but a future `doctor` name-vs-header check must anchor on the **last** bracket group, not the first.
+3. **`[[stem[slug]]]` wikilinks nest brackets.** Obsidian tolerates it; stricter markdown link-walkers
+   may not. Noted in case the heal regex ever grows a validator.
+
