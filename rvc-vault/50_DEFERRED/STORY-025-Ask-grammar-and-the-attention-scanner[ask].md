@@ -4,9 +4,9 @@ type: story
 priority: P1
 created: 2026-09-16
 domain: workflow_meta
-domain_tags: ["arena", "scanner", "notifications", "protocol"]
+domain_tags: [ask, arena, notifications, protocol]
 imported-from: "ADLAI STORY-110 task 1, v5.3 proposal §5, ROUTING §5.2 R1–R10"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 ---
 
 # STORY-025: Ask grammar and the attention scanner
