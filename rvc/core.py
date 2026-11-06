@@ -798,3 +798,27 @@ def bump_mint_floor(vault_path, prefix, num):
     # lock must never see the marker truncated empty mid-rewrite.
     _atomic_write_text(root_file, "\n".join(lines) + "\n")
     return root_file
+
+
+def _domain_vocabulary(vault_path):
+    """Read controlled domain slugs from Story-Domains.md if present."""
+    vocab = set()
+    path = os.path.join(vault_path, "10_CONTEXT", "specs", "Story-Domains.md")
+    if not os.path.isfile(path):
+        return vocab
+    try:
+        with open(path, "r", errors="replace") as f:
+            for line in f:
+                m = re.match(r"^\s*[-*]\s+(\S+)", line)
+                if m:
+                    vocab.add(m.group(1))
+    except OSError:
+        pass
+    return vocab
+
+
+def _parse_domain_from_filename(filename):
+    """Extract [domain] suffix from a filename stem, or None."""
+    stem = filename.rsplit(".md", 1)[0] if filename.endswith(".md") else filename
+    m = re.search(r"\[([^\]]+)\]$", stem)
+    return m.group(1) if m else None

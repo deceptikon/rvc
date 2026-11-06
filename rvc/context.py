@@ -175,7 +175,7 @@ def _context_goal_summary(text):
     return "\n".join(parts)
 
 
-def _context_target_summary(rel_path, text):
+def _context_target_summary(rel_path, text, effective_domain=None):
     """Clean high-density target issue summary: metadata + Why/Problem + Acceptance Criteria."""
     raw, body = _context_split_frontmatter(text)
     fields = plate_frontmatter(text)
@@ -186,6 +186,8 @@ def _context_target_summary(rel_path, text):
     header_lines = [
         f"- **State:** `{state}` | **Priority:** `{priority}` | **Type:** `{itype}` | **File:** `{rel_path}`"
     ]
+    if effective_domain:
+        header_lines.append(f"- **Domain:** `{effective_domain}`")
 
     sections = re.split(r"(?m)^(#{1,6}\s+.*)$", body)
     kept = []
@@ -911,13 +913,28 @@ def cmd_context(vault_path, item_id, top_k=CONTEXT_DEFAULT_TOP_K,
                 "form": "full",
             })
 
+    # Resolve effective domain: own domain_tags > epic's domain_tags
+    effective_domain = ""
+    target_fm = plate_frontmatter(content)
+    effective_domain = target_fm.get("domain_tags", "")
+    if not effective_domain:
+        epic_raw = target_fm.get("epic", "")
+        if epic_raw:
+            epic_name = epic_raw.strip("[] ")
+            epic_path = find_file_by_id(vault_path, epic_name)
+            if epic_path:
+                epic_text = _context_read(vault_path,
+                                          os.path.relpath(epic_path, vault_path).replace(os.sep, "/"))
+                if epic_text:
+                    effective_domain = plate_frontmatter(epic_text).get("domain_tags", "")
+
     target_block = {
         "kind": "target",
         "header": "",
         "footer": "",
         "meta": (),
         "text": content,
-        "summary": _context_target_summary(rel_path, content),
+        "summary": _context_target_summary(rel_path, content, effective_domain),
         "form": "full",
     }
     print(_context_assemble(target_id, target_title, target_block, hard_blocks,

@@ -10,7 +10,8 @@ from rvc.core import (
 )
 from rvc.git import cmd_git_commit_all
 from rvc.issues import (
-    cmd_get, cmd_issue_action, cmd_issue_list, cmd_create_issue, cmd_search
+    cmd_get, cmd_issue_action, cmd_issue_list, cmd_create_issue, cmd_search,
+    cmd_set_issue
 )
 from rvc.feedback import cmd_feedback
 from rvc.context import (
@@ -446,6 +447,22 @@ def handle_create(args):
         directory=args.directory,
         epic=args.epic,
         skip_ci=args.skip_ci,
+        domain=args.domain,
+    )
+
+
+def handle_set(args):
+    if args.issue_id in ("help", "--help", "-h"):
+        cmd_help("set")
+        return
+    vault = _require_vault(args.path)
+    cmd_set_issue(
+        vault,
+        args.issue_id,
+        domain=args.domain,
+        epic=args.epic,
+        priority=args.priority,
+        skip_ci=args.skip_ci,
     )
 
 
@@ -627,8 +644,18 @@ def build_parser():
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue")
     create_p.add_argument("--epic", default="", help="Parent epic name")
+    create_p.add_argument("--domain", default="", help="Domain tag (trailing slug in filename)")
     _add_ci_flag(create_p)
     create_p.set_defaults(handler=handle_create)
+
+    set_p = subparsers.add_parser("set", add_help=False)
+    set_p.add_argument("issue_id", help="Issue ID to edit (e.g. STORY-042)")
+    set_p.add_argument("--domain", default=None, help="Set or change domain tag")
+    set_p.add_argument("--epic", default=None, help="Set or change parent epic")
+    set_p.add_argument("--priority", default=None, choices=["P0", "P1", "P2", "P3", "Low", "Medium", "High", "Critical"],
+                       help="Change priority")
+    _add_ci_flag(set_p)
+    set_p.set_defaults(handler=handle_set)
 
     feedback_p = subparsers.add_parser("feedback", add_help=False)
     feedback_p.add_argument("file", help="Path to the feedback letter (e.g. 00_INBOX/FEEDBACK-rvc.md)")

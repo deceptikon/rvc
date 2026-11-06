@@ -9,7 +9,7 @@ import datetime
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, state_label, run_cmd, find_git_root,
     find_file_by_id, vault_create_lock, _next_id, bump_mint_floor,
-    LEGACY_PRIORITY_TO_P, STATUS_ALIAS
+    LEGACY_PRIORITY_TO_P, STATUS_ALIAS, _domain_vocabulary, _parse_domain_from_filename
 )
 from rvc.git import sync_before, sync_after, is_tracked
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
@@ -161,9 +161,17 @@ def _sanitize_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name).strip().replace(" ", "-")
 
 
+def _build_filename(issue_id, title, domain=None):
+    """Build filename with optional trailing domain slug."""
+    safe_title = _sanitize_filename(title)
+    if domain:
+        return f"{issue_id}-{safe_title}[{domain}].md"
+    return f"{issue_id}-{safe_title}.md"
+
+
 def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
                      priority="Medium", body="", directory=None,
-                     epic="", extra_frontmatter=None, skip_ci=True):
+                     epic="", extra_frontmatter=None, skip_ci=True, domain=""):
     """Create a new issue file with proper frontmatter."""
     if prefix is None:
         # BUG-04: the id prefix follows the type (bug -> BUG, epic -> EPIC),
@@ -174,6 +182,20 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
         translated = LEGACY_PRIORITY_TO_P[priority]
         print(f"[RVC] priority '{priority}' -> '{translated}' (this tree sorts P0-P3)")
         priority = translated
+
+    # Domain governance: mandatory when a vocabulary exists.
+    vocab = _domain_vocabulary(vault_path)
+    if vocab:
+        if issue_type == "epic" and not domain:
+            print("Error: this vault has a Story-Domains.md; epics require --domain.")
+            sys.exit(1)
+        if issue_type == "story" and not domain and not epic:
+            print("Error: this vault has a Story-Domains.md; stories require --domain or --epic.")
+            sys.exit(1)
+        if domain and domain not in vocab:
+            print(f"Error: domain '{domain}' is not in Story-Domains.md vocabulary.")
+            sys.exit(1)
+
     if directory is None:
         directory = tree.get("create") or tree["triage"]
     else:
@@ -200,8 +222,7 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
             # across prefixes can never free this number for reuse.
             num = int(issue_id.split("-", 1)[1])
             mint_marker = bump_mint_floor(vault_path, prefix, num)
-            safe_title = _sanitize_filename(title)
-            filename = f"{issue_id}-{safe_title}.md"
+            filename = _build_filename(issue_id, title, domain)
             filepath = os.path.join(target_dir, filename)
 
             if os.path.exists(filepath):
@@ -218,6 +239,8 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
             ]
             if epic:
                 lines.append(f"epic: [[{epic}]]")
+            if domain:
+                lines.append(f"domain_tags: {domain}")
             lines.append(f"started: {today}")
             if extra_frontmatter:
                 if "block" in tree:
@@ -274,6 +297,143 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
     sync_after(vault_path, paths, f"rvc: Created issue {issue_id}: {title}", skip_ci=skip_ci)
     
     return filepath
+
+
+def _rewrite_frontmatter_field(text, key, value):
+    """Replace or add a frontmatter field. Returns new text."""
+    if not text.startswith("---"):
+        return text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return text
+    body = text[end:]
+    raw = text[3:end].strip("\n")
+    out = []
+    found = False
+    for line in raw.splitlines():
+        m = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", line)
+        if m and m.group(1).lower() == key.lower():
+            if value is None:
+                continue  # remove field
+            out.append(f"{m.group(1)}: {value}")
+            found = True
+        else:
+            out.append(line)
+    if not found and value is not None:
+        out.append(f"{key}: {value}")
+    return "---\n" + "\n".join(out) + body
+
+
+def _rewrite_wikilinks(vault_path, old_stem, new_stem):
+    """Replace [[old_stem]] / [[old_stem|...]] / [[old_stem#...]] in all .md files."""
+    pat_link = re.compile(rf'\[\[{re.escape(old_stem)}\]\]')
+    pat_hash = re.compile(rf'\[\[{re.escape(old_stem)}#([^\]]+)\]\]')
+    pat_pipe = re.compile(rf'\[\[{re.escape(old_stem)}\|([^\]]+)\]\]')
+    changed_any = False
+    for root, dirs, files in os.walk(vault_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for fname in files:
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                text = open(fpath, "r", errors="replace").read()
+            except OSError:
+                continue
+            new_text = pat_link.sub(f"[[{new_stem}]]", text)
+            new_text = pat_hash.sub(f"[[{new_stem}#\\1]]", new_text)
+            new_text = pat_pipe.sub(f"[[{new_stem}|\\1]]", new_text)
+            if new_text != text:
+                with open(fpath, "w") as f:
+                    f.write(new_text)
+                changed_any = True
+    return changed_any
+
+
+def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, skip_ci=True):
+    """Edit mutable fields of an existing issue. Renames file if domain changes."""
+    file_path = find_file_by_id(vault_path, issue_id)
+    if not file_path:
+        print(f"Error: Item {issue_id} not found in vault.")
+        sys.exit(1)
+
+    vocab = _domain_vocabulary(vault_path)
+    if domain is not None and vocab and domain not in vocab:
+        print(f"Error: domain '{domain}' is not in Story-Domains.md vocabulary.")
+        sys.exit(1)
+
+    with open(file_path, "r", errors="replace") as f:
+        text = f.read()
+
+    fm = plate_frontmatter(text)
+    orig_title = fm.get("title", "")
+    orig_type = fm.get("type", "story")
+    new_text = text
+    renamed = False
+    old_path = file_path
+    new_path = file_path
+
+    # Priority
+    if priority is not None:
+        new_text = _rewrite_frontmatter_field(new_text, "priority", priority)
+
+    # Epic
+    if epic is not None:
+        if epic:
+            new_text = _rewrite_frontmatter_field(new_text, "epic", f"[[{epic}]]")
+        else:
+            new_text = _rewrite_frontmatter_field(new_text, "epic", None)
+
+    # Domain — may trigger a filename rename
+    if domain is not None:
+        new_text = _rewrite_frontmatter_field(new_text, "domain_tags", domain if domain else None)
+
+    # Write frontmatter changes first
+    if new_text != text:
+        with open(file_path, "w") as f:
+            f.write(new_text)
+
+    # Rename file if domain changed (or appeared / disappeared)
+    old_filename = os.path.basename(file_path)
+    old_stem = old_filename.rsplit(".md", 1)[0]
+    current_fm = plate_frontmatter(new_text)
+    current_domain = current_fm.get("domain_tags", "")
+    expected_filename = _build_filename(issue_id, orig_title, current_domain or None)
+    if expected_filename != old_filename:
+        dir_name = os.path.dirname(file_path)
+        new_path = os.path.join(dir_name, expected_filename)
+        if os.path.exists(new_path):
+            print(f"Error: target filename already exists: {new_path}")
+            sys.exit(1)
+
+        git_root = find_git_root(vault_path)
+        src_tracked = bool(git_root) and is_tracked(git_root, file_path)
+        if git_root and src_tracked:
+            rc, _, err = run_cmd(
+                f"git mv {shlex.quote(file_path)} {shlex.quote(new_path)}", cwd=git_root)
+            if rc != 0:
+                print(f"[RVC] git mv failed ({err.strip()}); falling back to plain move.")
+                src_tracked = False
+        if not src_tracked:
+            os.rename(file_path, new_path)
+
+        # Heal wikilinks that pointed to the old filename stem
+        _rewrite_wikilinks(vault_path, old_stem, expected_filename.rsplit(".md", 1)[0])
+
+        if os.path.exists(context_cache_path(vault_path)):
+            try:
+                context_cache_repath(vault_path, old_path, new_path)
+            except Exception:
+                pass
+
+        renamed = True
+        file_path = new_path
+
+    if priority is not None or epic is not None or domain is not None or renamed:
+        sync_after(vault_path, [old_path, new_path],
+                   f"rvc: Updated {issue_id} (set)", skip_ci=skip_ci)
+
+    return new_path
 
 
 def cmd_search(vault_path, query):

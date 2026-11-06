@@ -4,7 +4,10 @@ import os
 import sys
 import re
 
-from rvc.core import resolve_tree, tree_dirs, hot_dirs, LEGACY_PRIORITY_TO_P
+from rvc.core import (
+    resolve_tree, tree_dirs, hot_dirs, LEGACY_PRIORITY_TO_P,
+    _domain_vocabulary, _parse_domain_from_filename
+)
 from rvc.plate import plate_frontmatter
 
 # ── Constitution audit: `rvc doctor` (STORY-029) ─────────────────────────────
@@ -83,6 +86,7 @@ def cmd_doctor(vault_path, fix=False):
     tree = resolve_tree(vault_path)
     newvault = "block" in tree
     report = {"newvault": newvault, "violations": [], "warnings": [], "fixed": []}
+    vocab = _domain_vocabulary(vault_path)
     for bucket in hot_dirs(tree):
         root = os.path.join(vault_path, bucket)
         if not os.path.isdir(root):
@@ -101,6 +105,18 @@ def cmd_doctor(vault_path, fix=False):
                 status_key = next((k for k in fields if k.lower() == "status"), None)
                 priority = fields.get("priority")
                 priority_off = newvault and priority is not None and priority not in P_VOCABULARY
+
+                # Domain checks (only when a vocabulary is declared)
+                if vocab:
+                    file_domain = _parse_domain_from_filename(fn)
+                    fm_domain = fields.get("domain_tags", "")
+                    if file_domain and fm_domain and file_domain != fm_domain:
+                        report["warnings"].append(
+                            f"{rel}: domain mismatch — filename '{file_domain}' != frontmatter '{fm_domain}'")
+                    if fm_domain and fm_domain not in vocab:
+                        report["warnings"].append(
+                            f"{rel}: domain '{fm_domain}' not in Story-Domains.md vocabulary")
+
                 if not newvault:
                     continue  # legacy trees keep their filing conventions
                 if fix:
