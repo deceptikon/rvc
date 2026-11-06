@@ -10,6 +10,6 @@ tree.start=30_ACTIVE
 tree.supersede=90_ARCHIVE/superseded
 tree.triage=20_NEXT
 
-mint.STORY=41
+mint.STORY=42
 
 mint.BUG=10

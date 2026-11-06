@@ -2,11 +2,11 @@
 """BUG-14 acceptance tests: domain_tags become real.
 
 AC1: trailing domain slug in filename: <PREFIX>-<ID>-<title>[<domain>].md
-AC2: mandatory ownership — epics require domain; stories require domain or epic
-AC3: rvc create --domain <slug> stamps frontmatter and filename
-AC4: rvc set <ID> --domain <slug> renames file and rewrites wikilinks
-AC5: rvc context displays domain and inherits epic domain when story omits its own
-AC6: rvc doctor flags domain mismatch and unknown domains
+AC2: rvc create --domain <slug> stamps frontmatter and filename
+AC3: rvc set <ID> --domain <slug> renames file and rewrites wikilinks
+AC4: rvc context displays domain and inherits epic domain when story omits its own
+AC5: rvc doctor flags filename/frontmatter domain mismatch
+AC6: rvc plate shows domain summary
 """
 
 import os
@@ -25,30 +25,17 @@ def _make_vault_with_domains():
     return root, vault
 
 
-def test_create_epic_without_domain_fails():
-    """AC2: epic requires domain at creation time when a vocabulary exists."""
+def test_create_without_domain_succeeds():
+    """AC2: creating without --domain is always allowed (no mandatory governance)."""
     _, vault = _make_vault_with_domains()
-    try:
-        rvc_cli.cmd_create_issue(vault, "Platform Epic", issue_type="epic", priority="P1")
-    except SystemExit as e:
-        assert e.code == 1
-    else:
-        raise AssertionError("expected SystemExit for epic without domain")
-
-
-def test_create_story_without_domain_or_epic_fails():
-    """AC2: story requires domain or epic at creation time when a vocabulary exists."""
-    _, vault = _make_vault_with_domains()
-    try:
-        rvc_cli.cmd_create_issue(vault, "Orphan Story", issue_type="story", priority="P1")
-    except SystemExit as e:
-        assert e.code == 1
-    else:
-        raise AssertionError("expected SystemExit for story without domain or epic")
+    path = rvc_cli.cmd_create_issue(
+        vault, "Platform Epic", issue_type="epic", priority="P1")
+    fm = read_frontmatter(path)
+    assert "domain_tags" not in fm, fm
 
 
 def test_create_story_with_epic_no_domain_succeeds():
-    """AC2: story with epic but no domain of its own is allowed."""
+    """Creating a story with an epic but no domain of its own works."""
     _, vault = _make_vault_with_domains()
     epic_path = rvc_cli.cmd_create_issue(
         vault, "Platform Epic", issue_type="epic", priority="P1", domain="infra")
@@ -60,7 +47,7 @@ def test_create_story_with_epic_no_domain_succeeds():
 
 
 def test_create_with_domain_puts_slug_at_end():
-    """AC1+AC3: domain slug sits at end of filename before .md."""
+    """AC1+AC2: domain slug sits at end of filename before .md."""
     _, vault = _make_vault_with_domains()
     path = rvc_cli.cmd_create_issue(
         vault, "Refactor Parser", issue_type="story", priority="P1", domain="corpus")
@@ -72,7 +59,7 @@ def test_create_with_domain_puts_slug_at_end():
 
 
 def test_set_changes_domain_and_renames_file():
-    """AC4: rvc set changes domain and rewrites filename + frontmatter."""
+    """AC3: rvc set changes domain and rewrites filename + frontmatter."""
     _, vault = _make_vault_with_domains()
     path = rvc_cli.cmd_create_issue(
         vault, "Refactor Parser", issue_type="story", priority="P1", domain="corpus")
@@ -99,7 +86,7 @@ def test_set_changes_domain_and_renames_file():
 
 
 def test_set_can_change_epic_and_priority():
-    """AC4: rvc set updates epic and priority without rename."""
+    """AC3: rvc set updates epic and priority without rename."""
     _, vault = _make_vault_with_domains()
     epic_path = rvc_cli.cmd_create_issue(
         vault, "Parent Epic", issue_type="epic", priority="P1", domain="infra")
@@ -115,8 +102,21 @@ def test_set_can_change_epic_and_priority():
     assert fm.get("priority") == "P2", fm
 
 
+def test_set_output_shows_changes():
+    """AC3: rvc set prints a summary of what changed."""
+    _, vault = _make_vault_with_domains()
+    path = rvc_cli.cmd_create_issue(
+        vault, "Alpha", issue_type="story", priority="P1", domain="corpus")
+    story_id = read_frontmatter(path)["id"]
+    _, out = helpers.capture_stdout(
+        rvc_cli.cmd_set_issue, vault, story_id, priority="P0", domain="infra")
+    assert "Updated" in out, out
+    assert story_id in out, out
+    assert "domain" in out or "priority" in out or "renamed" in out, out
+
+
 def test_context_shows_domain():
-    """AC5: context target summary includes domain tag."""
+    """AC4: context target summary includes domain tag."""
     _, vault = _make_vault_with_domains()
     path = rvc_cli.cmd_create_issue(
         vault, "Visible Domain", issue_type="story", priority="P1", domain="review_queue")
@@ -127,7 +127,7 @@ def test_context_shows_domain():
 
 
 def test_context_inherits_epic_domain():
-    """AC5: story without domain inherits epic domain in context display."""
+    """AC4: story without domain inherits epic domain in context display."""
     _, vault = _make_vault_with_domains()
     epic_path = rvc_cli.cmd_create_issue(
         vault, "Parent Epic", issue_type="epic", priority="P1", domain="corpus")
@@ -146,7 +146,7 @@ def test_context_inherits_epic_domain():
 
 
 def test_doctor_flags_domain_mismatch():
-    """AC6: filename slug disagrees with frontmatter domain_tags is a warning."""
+    """AC5: filename slug disagrees with frontmatter domain_tags is a warning."""
     _, vault = _make_vault_with_domains()
     write_issue(vault, "20_NEXT/STORY-500-Probe[corpus].md",
                 {"id": "STORY-500", "type": "story", "priority": "P1",
@@ -156,12 +156,43 @@ def test_doctor_flags_domain_mismatch():
     assert found, f"expected domain warning, got {report['warnings']}"
 
 
-def test_doctor_flags_unknown_domain():
-    """AC6: domain not in Story-Domains.md is a warning."""
+def test_doctor_flags_missing_frontmatter_domain():
+    """AC5: filename has domain slug but no frontmatter domain_tags is a warning."""
     _, vault = _make_vault_with_domains()
-    write_issue(vault, "20_NEXT/STORY-501-Probe[unknown].md",
-                {"id": "STORY-501", "type": "story", "priority": "P1",
-                 "domain_tags": "unknown"})
+    write_issue(vault, "20_NEXT/STORY-501-Probe[corpus].md",
+                {"id": "STORY-501", "type": "story", "priority": "P1"})
     report = rvc_cli.cmd_doctor(vault)
-    found = any("unknown" in w.lower() or "domain" in w.lower() for w in report["warnings"])
-    assert found, f"expected unknown domain warning, got {report['warnings']}"
+    found = any("no domain_tags" in w.lower() for w in report["warnings"])
+    assert found, f"expected missing frontmatter domain warning, got {report['warnings']}"
+
+
+def test_doctor_flags_missing_slug_in_filename():
+    """AC5: frontmatter has domain_tags but no slug in filename is a warning."""
+    _, vault = _make_vault_with_domains()
+    write_issue(vault, "20_NEXT/STORY-502-Probe.md",
+                {"id": "STORY-502", "type": "story", "priority": "P1",
+                 "domain_tags": "corpus"})
+    report = rvc_cli.cmd_doctor(vault)
+    found = any("no slug" in w.lower() for w in report["warnings"])
+    assert found, f"expected missing slug warning, got {report['warnings']}"
+
+
+def test_plate_shows_domain_summary():
+    """AC6: rvc plate includes a DOMAINS section with domain groupings."""
+    _, vault = _make_vault_with_domains()
+    rvc_cli.cmd_create_issue(
+        vault, "Alpha", issue_type="story", priority="P1", domain="corpus")
+    rvc_cli.cmd_create_issue(
+        vault, "Beta", issue_type="story", priority="P1", domain="corpus")
+    rvc_cli.cmd_create_issue(
+        vault, "Gamma", issue_type="story", priority="P1", domain="infra")
+    # Create one without domain — not in summary
+    rvc_cli.cmd_create_issue(
+        vault, "Delta", issue_type="story", priority="P1")
+
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    assert "DOMAINS" in out, out
+    assert "corpus" in out, out
+    assert "infra" in out, out
+    # Count of corpus items (2) should be present
+    assert "(2)" in out, out

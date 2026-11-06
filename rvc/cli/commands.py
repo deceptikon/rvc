@@ -153,7 +153,8 @@ def cmd_help(subgroup=None):
         print("Usage:")
         print("  rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
-        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]")
+        print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]")
+        print("             [--domain ⟨slug⟩] [--no-skip-ci]")
         print()
         print("Arguments:")
         print("  ⟨title⟩      issue title")
@@ -163,6 +164,19 @@ def cmd_help(subgroup=None):
         print("  --body       initial issue body text")
         print("  --dir        destination bucket (default: this vault's create/triage bucket)")
         print("  --epic       parent epic name (e.g. EPIC-05)")
+        print("  --domain     domain tag (trailing slug in filename, e.g. review_queue)")
+        print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
+    elif subgroup == "set":
+        print("rvc set — edit mutable fields of an existing issue")
+        print()
+        print("Usage:")
+        print("  rvc set ⟨ID⟩ [--domain ⟨slug⟩] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…] [--no-skip-ci]")
+        print()
+        print("Arguments:")
+        print("  ⟨ID⟩         issue id (e.g. STORY-042)")
+        print("  --domain     set or change the domain tag; omitting clears it")
+        print("  --epic       set or change the parent epic; omitting clears it")
+        print("  --priority   set or change priority")
         print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
     elif subgroup == "get":
         print("rvc get — print the raw issue file")
@@ -456,7 +470,7 @@ def handle_set(args):
         cmd_help("set")
         return
     vault = _require_vault(args.path)
-    cmd_set_issue(
+    new_path = cmd_set_issue(
         vault,
         args.issue_id,
         domain=args.domain,

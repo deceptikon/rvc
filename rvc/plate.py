@@ -144,6 +144,7 @@ def plate_surface(fpath, vault_path, aliases):
         "name": name,
         "type": type_name,
         "priority": fields.get("priority", ""),
+        "domain_tags": (fields.get("domain_tags") or ""),
         "is_issue": type_name in PLATE_ISSUE_TYPES or name.startswith(("STORY-", "EPIC-")),
         "asks": plate_asks(text, aliases),
         "open_boxes": len(re.findall(r"^\s*(?:[-*]|\d+\.)\s*\[ \]", text, re.M)),
@@ -331,6 +332,17 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
 
     recent_commits = get_recent_vault_commits(vault_path, count=log_count)
 
+    # Domain summary: collect domain_tags from all surfaces
+    domain_map = {}  # domain -> [item_name, ...]
+    for surface in surfaces:
+        d = surface.get("domain_tags", "") or ""
+        if d:
+            domain_map.setdefault(d, []).append(surface["name"])
+    domain_summary = sorted(
+        ({"domain": d, "items": items} for d, items in domain_map.items()),
+        key=lambda x: (-len(x["items"]), x["domain"])
+    )
+
     if fmt == "json":
         payload = {
             "vault": vault_path,
@@ -339,6 +351,7 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             "today": today.isoformat(),
             "identity_lanes": bool(me),
             "recent_activity": recent_commits,
+            "domains": domain_summary,
             "lanes": {
                 key: [
                     {k: (v.isoformat() if isinstance(v, dt.date) else v) for k, v in row.items() if k != "asks"}
@@ -390,6 +403,14 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                 lines.append(f"  {row['name']}  type={row['type'] or '—'}")
             else:
                 lines.append(f"  {row['name']}  pri={row['priority'] or '—'}")
+
+    # Domain summary section
+    if domain_summary:
+        total_domain_items = sum(len(g["items"]) for g in domain_summary)
+        lines.append(f"\nDOMAINS  [{total_domain_items} issues in {len(domain_summary)} domains]")
+        for g in domain_summary:
+            items_str = ", ".join(sorted(g["items"]))
+            lines.append(f"  {g['domain']} ({len(g['items'])}): {items_str}")
 
     if external:
         lines.append("\nEXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)")

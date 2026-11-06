@@ -9,7 +9,7 @@ import datetime
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, state_label, run_cmd, find_git_root,
     find_file_by_id, vault_create_lock, _next_id, bump_mint_floor,
-    LEGACY_PRIORITY_TO_P, STATUS_ALIAS, _domain_vocabulary, _parse_domain_from_filename
+    LEGACY_PRIORITY_TO_P, STATUS_ALIAS
 )
 from rvc.git import sync_before, sync_after, is_tracked
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
@@ -183,19 +183,6 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
         print(f"[RVC] priority '{priority}' -> '{translated}' (this tree sorts P0-P3)")
         priority = translated
 
-    # Domain governance: mandatory when a vocabulary exists.
-    vocab = _domain_vocabulary(vault_path)
-    if vocab:
-        if issue_type == "epic" and not domain:
-            print("Error: this vault has a Story-Domains.md; epics require --domain.")
-            sys.exit(1)
-        if issue_type == "story" and not domain and not epic:
-            print("Error: this vault has a Story-Domains.md; stories require --domain or --epic.")
-            sys.exit(1)
-        if domain and domain not in vocab:
-            print(f"Error: domain '{domain}' is not in Story-Domains.md vocabulary.")
-            sys.exit(1)
-
     if directory is None:
         directory = tree.get("create") or tree["triage"]
     else:
@@ -357,11 +344,6 @@ def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, s
         print(f"Error: Item {issue_id} not found in vault.")
         sys.exit(1)
 
-    vocab = _domain_vocabulary(vault_path)
-    if domain is not None and vocab and domain not in vocab:
-        print(f"Error: domain '{domain}' is not in Story-Domains.md vocabulary.")
-        sys.exit(1)
-
     with open(file_path, "r", errors="replace") as f:
         text = f.read()
 
@@ -432,6 +414,17 @@ def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, s
     if priority is not None or epic is not None or domain is not None or renamed:
         sync_after(vault_path, [old_path, new_path],
                    f"rvc: Updated {issue_id} (set)", skip_ci=skip_ci)
+
+    parts = []
+    if domain is not None:
+        parts.append(f"domain={domain or '(none)'}")
+    if epic is not None:
+        parts.append(f"epic={epic or '(none)'}")
+    if priority is not None:
+        parts.append(f"priority={priority}")
+    if renamed:
+        parts.append(f"renamed -> {os.path.basename(new_path)}")
+    print(f"[RVC] Updated {issue_id}: {', '.join(parts)}")
 
     return new_path
 

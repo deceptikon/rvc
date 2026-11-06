@@ -6,7 +6,7 @@ import re
 
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, LEGACY_PRIORITY_TO_P,
-    _domain_vocabulary, _parse_domain_from_filename
+    _parse_domain_from_filename
 )
 from rvc.plate import plate_frontmatter
 
@@ -86,7 +86,6 @@ def cmd_doctor(vault_path, fix=False):
     tree = resolve_tree(vault_path)
     newvault = "block" in tree
     report = {"newvault": newvault, "violations": [], "warnings": [], "fixed": []}
-    vocab = _domain_vocabulary(vault_path)
     for bucket in hot_dirs(tree):
         root = os.path.join(vault_path, bucket)
         if not os.path.isdir(root):
@@ -106,16 +105,18 @@ def cmd_doctor(vault_path, fix=False):
                 priority = fields.get("priority")
                 priority_off = newvault and priority is not None and priority not in P_VOCABULARY
 
-                # Domain checks (only when a vocabulary is declared)
-                if vocab:
-                    file_domain = _parse_domain_from_filename(fn)
-                    fm_domain = fields.get("domain_tags", "")
-                    if file_domain and fm_domain and file_domain != fm_domain:
-                        report["warnings"].append(
-                            f"{rel}: domain mismatch — filename '{file_domain}' != frontmatter '{fm_domain}'")
-                    if fm_domain and fm_domain not in vocab:
-                        report["warnings"].append(
-                            f"{rel}: domain '{fm_domain}' not in Story-Domains.md vocabulary")
+                # Domain checks: filename slug vs frontmatter (existence, not vocabulary)
+                file_domain = _parse_domain_from_filename(fn)
+                fm_domain = fields.get("domain_tags", "")
+                if file_domain and fm_domain and file_domain != fm_domain:
+                    report["warnings"].append(
+                        f"{rel}: domain mismatch — filename '{file_domain}' != frontmatter '{fm_domain}'")
+                elif file_domain and not fm_domain:
+                    report["warnings"].append(
+                        f"{rel}: filename has domain '{file_domain}' but no domain_tags in frontmatter")
+                elif fm_domain and not file_domain:
+                    report["warnings"].append(
+                        f"{rel}: frontmatter has domain '{fm_domain}' but no slug in filename")
 
                 if not newvault:
                     continue  # legacy trees keep their filing conventions
