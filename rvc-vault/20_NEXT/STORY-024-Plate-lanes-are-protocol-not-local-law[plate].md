@@ -4,9 +4,9 @@ type: story
 priority: P1
 created: 2026-09-16
 domain: workflow_meta
-domain_tags: ["plate", "rvc", "protocol", "governance"]
+domain_tags: [plate, rvc, protocol, governance]
 imported-from: "ADLAI STORY-109 §5.3, T-GEN--plate-host"
-epic: "[[EPIC-001-RVC-Protocol]]"
+epic: "[[EPIC-001-RVC-Protocol[rvc]]]"
 ---
 
 # STORY-024: The plate is protocol, not a vault's local opinion
