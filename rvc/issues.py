@@ -9,7 +9,7 @@ import datetime
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, state_label, run_cmd, find_git_root,
     find_file_by_id, vault_create_lock, _next_id, bump_mint_floor,
-    LEGACY_PRIORITY_TO_P, STATUS_ALIAS
+    LEGACY_PRIORITY_TO_P, STATUS_ALIAS, parse_domain_tags
 )
 from rvc.git import sync_before, sync_after, is_tracked
 from rvc.context import context_cache_path, context_cache_repath, context_cache_update
@@ -169,6 +169,38 @@ def _build_filename(issue_id, title, domain=None):
     return f"{issue_id}-{safe_title}.md"
 
 
+def _apply_domain_slug(filename, domain):
+    """Swap the trailing `[slug]` of an existing name; leave the rest untouched.
+
+    A rename is history-breaking for anything that copied the path, so `rvc set
+    --domain` moves only the mutable part: the title the human chose is never
+    rebuilt from frontmatter (that silently renamed issues whose file name
+    diverged from their title), and an unrelated `--priority` edit never renames
+    at all.
+    """
+    suffix = ".md" if filename.endswith(".md") else ""
+    stem = filename[:-3] if suffix else filename
+    stem = re.sub(r"\[[^\]]*\]$", "", stem).rstrip("-")
+    if domain:
+        stem = f"{stem}[{_sanitize_filename(domain)}]"
+    return stem + suffix
+
+
+def _domain_field_and_slug(domain):
+    """(frontmatter value, filename slug) for a `--domain` argument.
+
+    The field is multi-valued in the wild, so `--domain "a, b"` is accepted: the
+    frontmatter keeps every slug (flow list) and the filename carries the first
+    one as the primary — the name can hold only one, and doctor checks that the
+    two agree by membership, not string equality.
+    """
+    tags = parse_domain_tags(domain or "")
+    if not tags:
+        return None, None
+    value = tags[0] if len(tags) == 1 else "[" + ", ".join(tags) + "]"
+    return value, tags[0]
+
+
 def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
                      priority="Medium", body="", directory=None,
                      epic="", extra_frontmatter=None, skip_ci=True, domain=""):
@@ -209,7 +241,8 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
             # across prefixes can never free this number for reuse.
             num = int(issue_id.split("-", 1)[1])
             mint_marker = bump_mint_floor(vault_path, prefix, num)
-            filename = _build_filename(issue_id, title, domain)
+            domain_field, domain_slug = _domain_field_and_slug(domain)
+            filename = _build_filename(issue_id, title, domain_slug)
             filepath = os.path.join(target_dir, filename)
 
             if os.path.exists(filepath):
@@ -226,8 +259,8 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
             ]
             if epic:
                 lines.append(f"epic: [[{epic}]]")
-            if domain:
-                lines.append(f"domain_tags: {domain}")
+            if domain_field:
+                lines.append(f"domain_tags: {domain_field}")
             lines.append(f"started: {today}")
             if extra_frontmatter:
                 if "block" in tree:
@@ -287,7 +320,13 @@ def cmd_create_issue(vault_path, title, prefix=None, issue_type="story",
 
 
 def _rewrite_frontmatter_field(text, key, value):
-    """Replace or add a frontmatter field. Returns new text."""
+    """Replace or add a frontmatter field. Returns new text.
+
+    The old field's continuation lines go with it: a block list (`domain_tags:`
+    followed by `  - rvc`) replaced by a scalar would otherwise leave the items
+    orphaned under the new value — invalid YAML, and the vault's own older files
+    are full of that shape.
+    """
     if not text.startswith("---"):
         return text
     end = text.find("\n---", 3)
@@ -297,9 +336,16 @@ def _rewrite_frontmatter_field(text, key, value):
     raw = text[3:end].strip("\n")
     out = []
     found = False
+    skipping = False
     for line in raw.splitlines():
         m = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", line)
+        if skipping:
+            # Indented continuation of the field just replaced (block list / map).
+            if not line.strip() or line[0] in (" ", "\t"):
+                continue
+            skipping = False
         if m and m.group(1).lower() == key.lower():
+            skipping = True
             if value is None:
                 continue  # remove field
             out.append(f"{m.group(1)}: {value}")
@@ -339,6 +385,10 @@ def _rewrite_wikilinks(vault_path, old_stem, new_stem):
 
 def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, skip_ci=True):
     """Edit mutable fields of an existing issue. Renames file if domain changes."""
+    if domain is None and epic is None and priority is None:
+        # Nothing named: say so instead of committing an empty "Updated" bump.
+        print(f"[RVC] Nothing to set on {issue_id} — pass --domain, --epic or --priority.")
+        return None
     file_path = find_file_by_id(vault_path, issue_id)
     if not file_path:
         print(f"Error: Item {issue_id} not found in vault.")
@@ -347,9 +397,6 @@ def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, s
     with open(file_path, "r", errors="replace") as f:
         text = f.read()
 
-    fm = plate_frontmatter(text)
-    orig_title = fm.get("title", "")
-    orig_type = fm.get("type", "story")
     new_text = text
     renamed = False
     old_path = file_path
@@ -367,20 +414,21 @@ def cmd_set_issue(vault_path, issue_id, domain=None, epic=None, priority=None, s
             new_text = _rewrite_frontmatter_field(new_text, "epic", None)
 
     # Domain — may trigger a filename rename
+    domain_slug = None
     if domain is not None:
-        new_text = _rewrite_frontmatter_field(new_text, "domain_tags", domain if domain else None)
+        domain_field, domain_slug = _domain_field_and_slug(domain)
+        new_text = _rewrite_frontmatter_field(new_text, "domain_tags", domain_field)
 
     # Write frontmatter changes first
     if new_text != text:
         with open(file_path, "w") as f:
             f.write(new_text)
 
-    # Rename file if domain changed (or appeared / disappeared)
+    # Rename only when the domain slug itself changed — never as a side effect of
+    # an unrelated field edit.
     old_filename = os.path.basename(file_path)
     old_stem = old_filename.rsplit(".md", 1)[0]
-    current_fm = plate_frontmatter(new_text)
-    current_domain = current_fm.get("domain_tags", "")
-    expected_filename = _build_filename(issue_id, orig_title, current_domain or None)
+    expected_filename = _apply_domain_slug(old_filename, domain_slug) if domain is not None else old_filename
     if expected_filename != old_filename:
         dir_name = os.path.dirname(file_path)
         new_path = os.path.join(dir_name, expected_filename)

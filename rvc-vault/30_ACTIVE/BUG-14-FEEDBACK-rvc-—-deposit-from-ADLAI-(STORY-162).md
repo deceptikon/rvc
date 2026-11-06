@@ -80,3 +80,63 @@ observations for the follow-up:
 3. **`[[stem[slug]]]` wikilinks nest brackets.** Obsidian tolerates it; stricter markdown link-walkers
    may not. Noted in case the heal regex ever grows a validator.
 
+
+---
+
+## Realization review (2026-11-06, second pass)
+
+The plate section of ask 4 rendered the tag field, not a domain view: grouping keyed on the raw
+`domain_tags:` string, so a multi-tag issue was its own "domain" and every group enumerated full file
+names — `["rvc", "protocol", "story"] (2): STORY-013-RVC-Security-Performance.md, …`. Replaced with a
+histogram per slug (`protocol×7  rvc×4`, folded ×1 tail, `N untagged` with the `rvc set` hint); detail
+stays in `--format json`. Same fix along the same reading path:
+
+- **`domain_tags` is parsed into slugs by one reader** (`core.parse_domain_tags` /
+  `frontmatter_domain_tags`), used by plate, doctor and context. It covers the quoted flow list, the bare
+  flow list, the bare scalar and the YAML **block list** — the older half of this vault was invisible to
+  the first cut, which read the field as a scalar.
+- **`rvc set --domain` moves only the trailing `[slug]`.** It used to rebuild the whole name from
+  `id + title`, so `--priority` on any file whose name had drifted from its title renamed it and rewrote
+  its backlinks. A rename stays scoped to the mutable part, as the letter warned.
+- **Drift is membership, not string equality:** a file named `[corpus]` with `domain_tags: [corpus, infra]`
+  is not a contradiction (and `--domain "a, b"` writes the list, stamps the first slug). `doctor` keeps
+  per-file warnings for real drift, and folds "domain only in frontmatter" — the pre-migration state of
+  19 files in this vault — into one counted line.
+- **Context** prints `rvc, protocol, story` instead of the raw bracket string, and labels an inherited
+  domain: `corpus (inherited from EPIC-01)`.
+- **Still open, unchanged by this pass:** ask 3 (controlled vocabulary) is *not* implemented — the
+  mandatory-governance cut of the first pass removed it and left `_domain_vocabulary` dead; it is deleted
+  here, so the absence is honest. Field-report items 1–3 (ranking boost, bracket-tail titles, nested
+  `[[stem[slug]]]`) also remain open. Tests: 162 passed, 1 skipped (+8 new, plate/doctor/set-shape).
+
+## Closing addendum — ask 3 relocated, not dropped (2026-11-06)
+
+The controlled vocabulary is declared in `.rvc-root` as `domain.<slug>=<what it covers>` and validated
+**by the plate at render time**, never by `create`:
+
+```
+DOMAINS  [9 of 10 surfaces tagged, 20 slugs in use — an item may carry several]
+  protocol×7  rvc×4  arena×3  feedback×2  notifications×2  plate×2  story×2
+  ×1: ask  automation  avatar  cross-vault  epic  governance  owed … +1 more
+  untagged (1): BUG-14 — rvc set ⟨ID⟩ --domain ⟨slug⟩
+  undeclared: story×2  automation×1  epic×1  owed×1  presence×1  turn-runner×1
+              — .rvc-root declares 20 slugs; promote one or re-tag
+```
+
+Why the marker and not a `Story-Domains.md`: the letter's own diagnosis is *one fact, two places*. A
+separate vocabulary file is a second place, and parsing prose for a list needs a parser that will
+disagree with the prose. `.rvc-root` is already the file the tool reads as machine-readable law
+(`tree.<verb>`, `mint.<PREFIX>`, `alias.*`, `plate.source.*`), so the list is one more key there and
+nothing new has to be discovered. Why the plate and not `create`: a slug typed in good faith is a
+reconciliation prompt, while refusing a mint turns a typo into a blocked session — and the plate is
+where the tag set is *read*, which is the only place decay is visible. Absent `domain.` lines means an
+absent rule, stated as `vocabulary: none declared`, so an unchecked set is never mistaken for a clean
+one (the same honesty `--as` now owes the identity lanes).
+
+The first six slugs named above are this vault's own rot, caught on the first run: `story`/`epic` are
+item types used as tags, `automation`/`turn-runner` restate `arena`/`rvcd`, `owed` restates `ask`,
+`presence` restates `avatar` — exactly the near-synonym class the letter predicted. Reconciling them
+is ordinary tagging, not tooling, so it does not hold this issue open.
+
+Tests: 167 passed, 1 skipped. Docs: `specs/PROTOCOL.md` (marker key table), `specs/COMMANDS.md`
+(`rvc set`, plate block), `DECISIONS.md`, `GOTCHAS.md`, `STATE.json`.

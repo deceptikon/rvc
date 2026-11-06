@@ -8,7 +8,8 @@ import math
 import hashlib
 import sqlite3
 
-from rvc.core import resolve_tree, tree_dirs, find_file_by_id, build_vault_index, _find_in_index
+from rvc.core import (resolve_tree, tree_dirs, find_file_by_id, build_vault_index,
+                      _find_in_index, frontmatter_domain_tags)
 from rvc.plate import plate_frontmatter
 
 CONTEXT_CACHE_NAME = ".rvc-context-cache.sqlite"
@@ -913,11 +914,13 @@ def cmd_context(vault_path, item_id, top_k=CONTEXT_DEFAULT_TOP_K,
                 "form": "full",
             })
 
-    # Resolve effective domain: own domain_tags > epic's domain_tags
-    effective_domain = ""
+    # Resolve effective domain: own domain_tags > epic's domain_tags. Parsed into
+    # slugs so the line reads `rvc, protocol` and not the raw `["rvc", "protocol"]`,
+    # and inheritance is labelled — a domain read off the epic is not the story's own claim.
     target_fm = plate_frontmatter(content)
-    effective_domain = target_fm.get("domain_tags", "")
-    if not effective_domain:
+    domain_tags = frontmatter_domain_tags(content)
+    domain_source = ""
+    if not domain_tags:
         epic_raw = target_fm.get("epic", "")
         if epic_raw:
             epic_name = epic_raw.strip("[] ")
@@ -926,7 +929,11 @@ def cmd_context(vault_path, item_id, top_k=CONTEXT_DEFAULT_TOP_K,
                 epic_text = _context_read(vault_path,
                                           os.path.relpath(epic_path, vault_path).replace(os.sep, "/"))
                 if epic_text:
-                    effective_domain = plate_frontmatter(epic_text).get("domain_tags", "")
+                    domain_tags = frontmatter_domain_tags(epic_text)
+                    domain_source = epic_name
+    effective_domain = ", ".join(domain_tags)
+    if effective_domain and domain_source:
+        effective_domain += f" (inherited from {domain_source})"
 
     target_block = {
         "kind": "target",

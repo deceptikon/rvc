@@ -154,7 +154,7 @@ def cmd_help(subgroup=None):
         print("  rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
         print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]")
-        print("             [--domain ⟨slug⟩] [--no-skip-ci]")
+        print("             [--domain ⟨slug⟩[,…]] [--no-skip-ci]")
         print()
         print("Arguments:")
         print("  ⟨title⟩      issue title")
@@ -164,18 +164,19 @@ def cmd_help(subgroup=None):
         print("  --body       initial issue body text")
         print("  --dir        destination bucket (default: this vault's create/triage bucket)")
         print("  --epic       parent epic name (e.g. EPIC-05)")
-        print("  --domain     domain tag (trailing slug in filename, e.g. review_queue)")
+        print("  --domain     domain slug(s), comma-separated; the first is the file-name slug")
+        print("               (rvc plate names the ones .rvc-root does not declare; create never does)")
         print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
     elif subgroup == "set":
         print("rvc set — edit mutable fields of an existing issue")
         print()
         print("Usage:")
-        print("  rvc set ⟨ID⟩ [--domain ⟨slug⟩] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…] [--no-skip-ci]")
+        print("  rvc set ⟨ID⟩ [--domain ⟨slug⟩[,…]] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…] [--no-skip-ci]")
         print()
         print("Arguments:")
         print("  ⟨ID⟩         issue id (e.g. STORY-042)")
-        print("  --domain     set or change the domain tag; omitting clears it")
-        print("  --epic       set or change the parent epic; omitting clears it")
+        print("  --domain     set or change the domain slug(s); an empty value clears it and renames")
+        print("  --epic       set or change the parent epic; an empty value clears it")
         print("  --priority   set or change priority")
         print("  --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
     elif subgroup == "get":
@@ -200,6 +201,9 @@ def cmd_help(subgroup=None):
         print("  --log-count  number of recent vault commits to show (default: 5)")
         print("  --no-log     disable the recent activity git log")
         print("  --write      also persist the text rendering to the tree's PLATE.md")
+        print()
+        print("Also prints a DOMAINS histogram: per-slug counts, the untagged surfaces named,")
+        print("and — when .rvc-root declares domain.⟨slug⟩= lines — the slugs off that list.")
     elif subgroup == "doctor":
         print("rvc doctor — audit the vault against its constitution")
         print()
@@ -305,7 +309,7 @@ def cmd_help(subgroup=None):
         print("  create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]")
         print("             [--priority P0|P1|P2|P3|Low|Medium|High|Critical]")
         print("             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]")
-        print("             [--domain ⟨slug⟩] [--no-skip-ci]")
+        print("             [--domain ⟨slug⟩[,…]] [--no-skip-ci]")
         print("      Create a new issue: mints the next ID and lands in the create bucket.")
         print("      ⟨title⟩      issue title")
         print("      --prefix     ID prefix (default: STORY)")
@@ -314,15 +318,15 @@ def cmd_help(subgroup=None):
         print("      --body       initial issue body text")
         print("      --dir        destination bucket (default: this vault's create/triage bucket)")
         print("      --epic       parent epic name (e.g. EPIC-05)")
-        print("      --domain     domain tag (trailing slug in filename, e.g. review_queue)")
+        print("      --domain     domain slug(s), comma-separated; the first is the file-name slug")
         print("      --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
         print()
-        print("  set ⟨ID⟩ [--domain ⟨slug⟩] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…]")
+        print("  set ⟨ID⟩ [--domain ⟨slug⟩[,…]] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…]")
         print("           [--no-skip-ci]")
         print("      Edit mutable fields of an existing issue (domain, epic, priority).")
         print("      ⟨ID⟩         issue id (e.g. STORY-042)")
-        print("      --domain     set or change the domain tag; no value clears it")
-        print("      --epic       set or change the parent epic; no value clears it")
+        print("      --domain     set or change the domain slug(s); an empty value clears it and renames")
+        print("      --epic       set or change the parent epic; an empty value clears it")
         print("      --priority   set or change priority")
         print("      --no-skip-ci run CI on this commit — the [skip ci] stamp is default ON")
         print()
@@ -358,6 +362,8 @@ def cmd_help(subgroup=None):
         print("  plate [--as ⟨handle⟩] [--format text|json] [--stale-days ⟨N⟩]")
         print("        [--log-count ⟨N⟩] [--no-log] [--write]")
         print("      Render the plate: lanes computed from folders, priorities and open asks.")
+        print("      Lanes, a DOMAINS histogram (per-slug counts, untagged named) and the")
+        print("      slugs undeclared against .rvc-root's domain.⟨slug⟩= list, if it has one.")
         print("      --as         canonicalize this handle for the owed-turn lane")
         print("      --format     output format (default: text)")
         print("      --stale-days overdue threshold in days (default: 7)")
@@ -481,7 +487,7 @@ def handle_set(args):
         cmd_help("set")
         return
     vault = _require_vault(args.path)
-    new_path = cmd_set_issue(
+    cmd_set_issue(
         vault,
         args.issue_id,
         domain=args.domain,
@@ -669,13 +675,16 @@ def build_parser():
     create_p.add_argument("--dir", default=None, dest="directory",
                           help="Bucket for the new issue")
     create_p.add_argument("--epic", default="", help="Parent epic name")
-    create_p.add_argument("--domain", default="", help="Domain tag (trailing slug in filename)")
+    create_p.add_argument("--domain", default="",
+                          help="Domain slug(s), comma-separated; the first becomes the filename slug "
+                               "(validated by 'rvc plate', never required)")
     _add_ci_flag(create_p)
     create_p.set_defaults(handler=handle_create)
 
     set_p = subparsers.add_parser("set", add_help=False)
     set_p.add_argument("issue_id", help="Issue ID to edit (e.g. STORY-042)")
-    set_p.add_argument("--domain", default=None, help="Set or change domain tag")
+    set_p.add_argument("--domain", default=None,
+                       help="Set or change the domain slug(s); empty clears it")
     set_p.add_argument("--epic", default=None, help="Set or change parent epic")
     set_p.add_argument("--priority", default=None, choices=["P0", "P1", "P2", "P3", "Low", "Medium", "High", "Critical"],
                        help="Change priority")

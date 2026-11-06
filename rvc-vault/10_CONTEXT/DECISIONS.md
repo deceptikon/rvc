@@ -269,3 +269,28 @@ live decision; compress superseded ones to one line pointing at the resolving co
   stray files outside the create bucket — per-path existence checks cannot see a
   wrong-bucket mint. Ids are permanent: a duplicate mint is the worst failure this
   tool has, so the stress harness (40 runs, zero flakes) is part of the regression.
+
+## 2026-11-06 — pi (qwen3.8-flash) — the domain block is a histogram, and the name moves only its slug (BUG-14 review)
+
+- **`rvc plate` DOMAINS is a per-slug histogram, not a listing.** The first cut grouped on the raw
+  `domain_tags:` string, so every multi-tag issue became its own "domain" (`["rvc","protocol","story"] (1):
+  <70-char filename>`) — a dump of the tag field, and the file names were already in the lanes above. Now:
+  tags are parsed into slugs, an item joins every slug group it carries, and the render is `protocol×7
+  rvc×4` + a folded ×1 tail + the untagged count. Detail stays in `--format json`. Same reason the plate
+  titles a lane instead of explaining it: an index the eye can scan, not a table to read.
+- **One fact, read one way.** `parse_domain_tags` / `frontmatter_domain_tags` (core.py) are the only readers
+  of the field, shared by plate, doctor and context — scalar, flow list, quoted flow list and YAML block list
+  all mean the same thing to all three. Divergent readers are how a tag decays: the vault's own 47 tagged
+  files use three different shapes.
+- **`rvc set --domain` mutates only the slug in the file name.** The first cut rebuilt the whole name from
+  `issue_id + title`, so changing a *priority* silently renamed any file whose name had drifted from its
+  title — and healed wikilinks to match. A rename is the history-breaking half of this feature (the letter
+  said so before it was built), so the blast radius is now exactly the trailing `[slug]`.
+- **Ask 3's vocabulary lives in `.rvc-root` (`domain.<slug>=<what it covers>`) and is checked by the plate,
+  not by `create`.** The first pass read a hardcoded `10_CONTEXT/specs/Story-Domains.md`, made it mandatory,
+  was reverted, and left the helper dead. Both halves were wrong: a separate vocabulary file is a second place
+  to remember and prose needs a parser that will disagree with itself, while refusing a mint turns a typo into
+  a blocked session. The marker already owns everything machine-readable about a vault (`tree.<verb>`,
+  `mint.<PREFIX>`, `alias.*`, `plate.source.*`), so the list is one more key there and the plate names what is
+  off-list. No `domain.` lines means no rule — and the plate says `vocabulary: none declared`, so an unchecked
+  tag set is never read as a clean one.

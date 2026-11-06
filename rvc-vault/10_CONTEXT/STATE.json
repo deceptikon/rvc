@@ -1,12 +1,11 @@
 {
   "active_issue": "BUG-14",
   "active_branch": "domain-tags-story",
-  "agent": "big-pickle",
+  "agent": "pi (qwen3.8-flash)",
   "started_at": "2026-09-29T00:00:00Z",
-  "last_run": "2026-11-06T18:43:00Z",
-  "last_action": "domain tags: remove mandatory governance, add plate domain summary, fix set output; 154 tests green",
+  "last_run": "2026-11-06T13:28:00Z",
+  "last_action": "BUG-14 realization review: plate DOMAINS -> per-slug histogram + named untagged, shared tag parser (scalar/flow/block), set --domain moves only the trailing slug, doctor drift by membership with one aggregated line, ask 3 relocated to a .rvc-root `domain.<slug>=` vocabulary checked by the plate",
   "next_issue": "STORY-044",
   "next_blocked_on": [],
-  "last_qa": "154 passed, 0 failed, 1 skipped"
-
+  "last_qa": "167 passed, 0 failed, 1 skipped"
 }

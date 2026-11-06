@@ -164,6 +164,11 @@ rvc issue STORY-28 done         # Review → Done
 rvc create "My New Feature"
 rvc create "Critical Bug" --prefix BUG --type bug --priority Critical
 rvc create "Spike: Reranker" --epic EPIC-05-PRD-Phase-2 --body "## Context\n..."
+rvc create "Queue view" --domain review_queue   # stamped in the name: STORY-42-Queue-view[review_queue].md
+
+# ── Edit Mutable Fields ──
+rvc set STORY-28 --domain citation             # rewrites the field, the [slug], and every [[backlink]]
+rvc set STORY-28 --priority P1
 
 # ── Context Assembler ──
 rvc context STORY-28            # Issue + [[linked]] refs + Top-K BM25 matches
@@ -192,6 +197,7 @@ rvc project info                # Show vault path + ROADMAP.md
 | `--body` | _(template)_ | Initial body text (`\n` for newlines) |
 | `--dir` | `01_To_Do` | Target folder under `10_Issues/` |
 | `--epic` | _(none)_ | Parent epic name |
+| `--domain` | _(none)_ | Domain slug(s), comma-separated; the first becomes the trailing `[slug]` in the file name. Validated by `rvc plate` against `domain.<slug>=` in `.rvc-root`, never required |
 
 ---
 
@@ -314,6 +320,28 @@ The graph flows: **MAP.md → EPIC → STORY → linked stories/specs**. Domain 
 3. Child directory literally named `vault` (backward compat)
 
 This allows vaults to use any directory name — critical when you have multiple projects open in Obsidian's vault switcher.
+
+### What the `.rvc-root` marker can hold
+
+The marker is the one file the tool reads as *machine-readable law*. Every key is optional
+except where stated; a key that is absent means the rule it would carry does not exist.
+
+| Line | Meaning |
+|------|---------|
+| `vault=<name>` | The vault lives in that subdirectory of the project root |
+| `tree.<verb>=<dir>` | The bucket map — folder is state (required verbs per preset) |
+| `mint.<PREFIX>=<n>` | High-water mark for ids, so a rename can never free a number for reuse |
+| `alias.<canonical>=<handles>` | Handles the plate canonicalizes in ask boxes |
+| `plate.owner=<handle>` | The seat verdict-asks are addressed to |
+| `plate.source.<name>=<path>` | An external vault the plate derives a feedback lane from (ids and counts only) |
+| `plate.alias.<name>=<P>` | Display alias for that lane's ids (`BUG-14` renders as `F-14`) |
+| `domain.<slug>=<what it covers>` | One slug of the controlled domain vocabulary (BUG-14 ask 3) |
+
+`domain.` lines are the *declared* vocabulary: `rvc plate` validates the tags actually in
+use against them and names the ones that are off-list. Nothing is checked at create — a new
+slug is a reconciliation prompt (promote it in the marker, or re-tag the issue), not a failed
+mint. With no `domain.` lines the plate says `vocabulary: none declared`, so an unchecked tag
+set is never mistaken for a clean one.
 
 ## Git Sync
 

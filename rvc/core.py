@@ -800,20 +800,86 @@ def bump_mint_floor(vault_path, prefix, num):
     return root_file
 
 
-def _domain_vocabulary(vault_path):
-    """Read controlled domain slugs from Story-Domains.md if present."""
-    vocab = set()
-    path = os.path.join(vault_path, "10_CONTEXT", "specs", "Story-Domains.md")
-    if not os.path.isfile(path):
+def parse_domain_tags(raw):
+    """Split one `domain_tags:` value into slugs — `a`, `[a, b]`, `["a", "b"]`, `a, b`.
+
+    The field is multi-valued in the wild (ADLAI, and this vault's own 130
+    archived issues) and rvc's own create/set write a bare slug, so every
+    reader has to accept both shapes or each distinct spelling becomes its own
+    "domain" — which is exactly how the plate's grouping turned into a dump.
+    """
+    text = (raw or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    tags = []
+    for part in text.split(","):
+        part = part.strip().strip("\"'").strip()
+        if part and part not in tags:
+            tags.append(part)
+    return tags
+
+
+def frontmatter_domain_tags(text):
+    """All domain slugs in a file's frontmatter: inline value or block list.
+
+    `plate_frontmatter` is a scalar reader, so `domain_tags:` followed by
+    `  - rvc` reads back as empty — the block form is what the older issues in
+    this vault use, and it was invisible to the plate, doctor and context.
+    """
+    if not text.startswith("---"):
+        return []
+    end = text.find("\n---", 3)
+    if end == -1:
+        return []
+    tags, in_block = [], False
+    for line in text[3:end].splitlines():
+        if in_block:
+            item = re.match(r"^\s*[-*]\s*(.+)$", line)
+            if item:
+                slug = item.group(1).strip().strip("\"'").strip()
+                if slug and slug not in tags:
+                    tags.append(slug)
+                continue
+            in_block = False
+        match = re.match(r"^domain_tags\s*:\s*(.*)$", line, re.I)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        if value:
+            for tag in parse_domain_tags(value):
+                if tag not in tags:
+                    tags.append(tag)
+        else:
+            in_block = True
+    return tags
+
+
+def read_domain_vocabulary(vault_path):
+    """The vault's declared domain slugs: `domain.<slug>=<label>` lines in `.rvc-root`.
+
+    Ask 3 of the BUG-14 letter asked for a controlled vocabulary. A separate
+    `Story-Domains.md` would be a second place to remember, and parsing prose
+    for a list is a parser that always disagrees with itself; the marker already
+    owns everything machine-readable about this vault (`tree.<verb>`, `mint.<PREFIX>`,
+    `alias.*`, `plate.source.*`), so the list lives there and nothing else has to
+    be discovered. No lines means no vocabulary — the plate says so instead of
+    inventing a law the vault never published. Validation is the plate's job, not
+    `create`'s: a slug typed in good faith is a signal to reconcile, not a
+    reason to refuse the mint.
+    """
+    root_file = marker_file(vault_path) or os.path.join(vault_path, ".rvc-root")
+    vocab = {}
+    if not os.path.exists(root_file):
         return vocab
-    try:
-        with open(path, "r", errors="replace") as f:
-            for line in f:
-                m = re.match(r"^\s*[-*]\s+(\S+)", line)
-                if m:
-                    vocab.add(m.group(1))
-    except OSError:
-        pass
+    with open(root_file, "r", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or not line.startswith("domain.") or "=" not in line:
+                continue
+            key, _, label = line.partition("=")
+            slug = key[len("domain."):].strip()
+            if slug:
+                vocab[slug] = label.strip()
     return vocab
 
 

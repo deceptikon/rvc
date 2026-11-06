@@ -13,3 +13,29 @@ tree.triage=20_NEXT
 mint.STORY=42
 
 mint.BUG=10
+
+# Domain vocabulary (BUG-14 ask 3). Declared here, checked by `rvc plate` at render
+# time — never at create. `domain.<slug>=<what it covers>`; the slug is what goes in
+# `domain_tags:` and in the trailing [slug] of a file name. A tag outside this list
+# is not refused, it is named in the plate's `undeclared:` line until it is reconciled
+# (promote the slug here, or `rvc set <ID> --domain <declared>` on the issue).
+domain.rvc=RVC the tool: CLI, core, tests
+domain.plate=the plate: lanes, DOMAINS block, PLATE.md
+domain.context=context assembly, retrieval, search
+domain.protocol=vault law: buckets, transitions, specs
+domain.governance=doctor, the constitution, triage rules
+domain.triage=INBOX to NEXT decisions
+domain.feedback=FEEDBACK letters between vaults
+domain.cross-vault=anything delivered outside this vault
+domain.arena=the debate engine (rvcd, turn runner, automation)
+domain.rvcd=the MCP daemon runtime
+domain.scanner=the attention scanner
+domain.avatar=the Telegram presence
+domain.notifications=delivery to a human (digests, pings)
+domain.telegram=the Telegram transport
+domain.ask=ask grammar, owed turns
+domain.git=sync, commits, [skip ci] stamps
+domain.frontmatter=field shapes, portability
+domain.hygiene=self-audit, drift, cleanup
+domain.cost=token and time budgets
+domain.planning=legacy engine work: pipeline, storywriter, contracts

@@ -6,7 +6,9 @@ AC2: rvc create --domain <slug> stamps frontmatter and filename
 AC3: rvc set <ID> --domain <slug> renames file and rewrites wikilinks
 AC4: rvc context displays domain and inherits epic domain when story omits its own
 AC5: rvc doctor flags filename/frontmatter domain mismatch
-AC6: rvc plate shows domain summary
+AC6: rvc plate shows a domain summary (a histogram, not a tag dump)
+AC7: rvc plate validates tags against the vocabulary declared in .rvc-root (ask 3,
+     relocated: checked at render time, never at create)
 """
 
 import os
@@ -15,13 +17,17 @@ import helpers
 from helpers import make_vault, read_frontmatter, rvc_cli, write_issue
 
 
+def _declare_domains(vault, *slugs):
+    """Declare a vocabulary in the vault's own `.rvc-root` — no second file."""
+    with open(os.path.join(vault, ".rvc-root"), "a") as f:
+        for slug in slugs:
+            f.write(f"domain.{slug}={slug} coverage\n")
+
+
 def _make_vault_with_domains():
     """Create a scratch vault and seed it with a controlled domain vocabulary."""
     root, vault = make_vault()
-    vocab_path = os.path.join(vault, "10_CONTEXT", "specs", "Story-Domains.md")
-    os.makedirs(os.path.dirname(vocab_path), exist_ok=True)
-    with open(vocab_path, "w") as f:
-        f.write("# Story Domains\n\n- corpus\n- infra\n- review_queue\n- legal_corpus\n")
+    _declare_domains(vault, "corpus", "infra", "review_queue", "legal_corpus")
     return root, vault
 
 
@@ -177,8 +183,28 @@ def test_doctor_flags_missing_slug_in_filename():
     assert found, f"expected missing slug warning, got {report['warnings']}"
 
 
+
+
+def _write_raw(vault, rel_path, text):
+    """Write a file verbatim — for frontmatter shapes the dict helper cannot express."""
+    path = os.path.join(vault, rel_path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
+def _domain_block(out):
+    """The DOMAINS section of a plate rendering, alone."""
+    assert "DOMAINS" in out, out
+    tail = out.split("\nDOMAINS", 1)[1]
+    for marker in ("\nEXTERNAL FEEDBACK", "\nRECENT ACTIVITY"):
+        tail = tail.split(marker, 1)[0]
+    return tail
+
+
 def test_plate_shows_domain_summary():
-    """AC6: rvc plate includes a DOMAINS section with domain groupings."""
+    """AC6: the plate's DOMAINS block is a histogram of slugs, not a tag dump."""
     _, vault = _make_vault_with_domains()
     rvc_cli.cmd_create_issue(
         vault, "Alpha", issue_type="story", priority="P1", domain="corpus")
@@ -186,13 +212,211 @@ def test_plate_shows_domain_summary():
         vault, "Beta", issue_type="story", priority="P1", domain="corpus")
     rvc_cli.cmd_create_issue(
         vault, "Gamma", issue_type="story", priority="P1", domain="infra")
-    # Create one without domain — not in summary
+    # Create one without a domain — not in the histogram, but counted
     rvc_cli.cmd_create_issue(
         vault, "Delta", issue_type="story", priority="P1")
 
     _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
-    assert "DOMAINS" in out, out
-    assert "corpus" in out, out
-    assert "infra" in out, out
-    # Count of corpus items (2) should be present
-    assert "(2)" in out, out
+    block = _domain_block(out)
+    assert "corpus×2" in block, block
+    assert "infra" in block, block
+    assert "untagged (1):" in block, block
+    # The noise this replaces: full file names and one group per raw tag string
+    rows = [ln for ln in block.splitlines() if ln.strip() and "surfaces tagged" not in ln]
+    assert not [ln for ln in rows if ".md" in ln or "[" in ln], rows
+    # Declared vocabulary, everything in use matches — the check says it ran
+    assert "vocabulary: 4 declared, every slug in use matches" in block, block
+
+
+def test_plate_names_the_untagged_surfaces():
+    """AC6: a count nobody can act on is not a finding; the ids are printed."""
+    _, vault = _make_vault_with_domains()
+    path = rvc_cli.cmd_create_issue(
+        vault, "No Domain At All", issue_type="story", priority="P1")
+    item_id = read_frontmatter(path)["id"]
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    block = _domain_block(out)
+    assert f"untagged (1): {item_id}" in block, block
+
+
+def test_plate_validates_against_the_declared_vocabulary():
+    """AC7: ask 3's teeth, at render time — an off-list slug is named, not refused."""
+    _, vault = _make_vault_with_domains()
+    rvc_cli.cmd_create_issue(vault, "On List", issue_type="story", priority="P1",
+                             domain="corpus")
+    rvc_cli.cmd_create_issue(vault, "Off List", issue_type="story", priority="P1",
+                             domain="story")
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    block = _domain_block(out)
+    assert "undeclared: story×1" in block, block
+    assert "corpus" in block and "undeclared: corpus" not in block, block
+
+
+def test_plate_says_when_no_vocabulary_is_declared():
+    """AC7: absence of a check is stated, never mistaken for absence of a problem."""
+    root, vault = make_vault()
+    rvc_cli.cmd_create_issue(vault, "Anything", issue_type="story", priority="P1",
+                             domain="whatever")
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    block = _domain_block(out)
+    assert "vocabulary: none declared" in block, block
+
+
+def test_read_domain_vocabulary_parses_the_marker():
+    """AC7: `domain.<slug>=<label>` lines, comments ignored, absent means no list."""
+    root, vault = make_vault()
+    assert rvc_cli.read_domain_vocabulary(vault) == {}
+    with open(os.path.join(vault, ".rvc-root"), "a") as f:
+        f.write("# comment\ndomain.rvc=the tool\ndomain.plate = the plate\n")
+    vocab = rvc_cli.read_domain_vocabulary(vault)
+    assert vocab == {"rvc": "the tool", "plate": "the plate"}, vocab
+
+
+def test_plate_groups_per_slug_not_per_tag_string():
+    """AC6: a multi-tag issue joins every slug group it carries, counted once per slug."""
+    _, vault = _make_vault_with_domains()
+    _write_raw(vault, "20_NEXT/STORY-300-Alpha.md", """---
+id: STORY-300
+title: Alpha
+type: story
+priority: P1
+domain_tags: ["corpus", "infra"]
+---
+""")
+    _write_raw(vault, "20_NEXT/STORY-301-Beta.md", """---
+id: STORY-301
+title: Beta
+type: story
+priority: P1
+domain_tags: [corpus, review_queue]
+---
+""")
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    block = _domain_block(out)
+    assert "corpus×2" in block, block
+    assert "infra" in block and "review_queue" in block, block
+    assert "2 of 2 surfaces tagged" in block, block
+
+
+def test_plate_reads_block_list_domain_tags():
+    """AC6: the YAML block form (this vault's older shape) is not invisible."""
+    _, vault = _make_vault_with_domains()
+    _write_raw(vault, "20_NEXT/STORY-302-Gamma.md", """---
+id: STORY-302
+title: Gamma
+type: story
+priority: P1
+domain_tags:
+  - corpus
+  - legal_corpus
+---
+""")
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
+    block = _domain_block(out)
+    assert "corpus" in block and "legal_corpus" in block, block
+
+
+def test_plate_json_domains_are_counted_slugs():
+    """AC6+AC7: the JSON payload keeps the detail the text rendering folds away."""
+    import json
+    _, vault = _make_vault_with_domains()
+    rvc_cli.cmd_create_issue(
+        vault, "Alpha", issue_type="story", priority="P1", domain="corpus")
+    rvc_cli.cmd_create_issue(
+        vault, "Off List", issue_type="story", priority="P1", domain="pipeline")
+    rvc_cli.cmd_create_issue(vault, "Bare", issue_type="story", priority="P1")
+    _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault, fmt="json")
+    domains = json.loads(out)["domains"]
+    assert domains["tagged"] == 2 and domains["untagged"] == 1, domains
+    assert domains["untagged_items"] == ["STORY-03"], domains
+    assert domains["vocabulary"]["declared"] == 4, domains
+    assert [row["domain"] for row in domains["undeclared"]] == ["pipeline"], domains
+    corpus = [row for row in domains["slugs"] if row["domain"] == "corpus"][0]
+    assert corpus["count"] == 1 and corpus["items"] == ["STORY-01"], domains
+
+
+def test_create_never_refuses_an_undeclared_domain():
+    """AC7: the vocabulary is a render-time check; a mint is never blocked on a slug."""
+    _, vault = _make_vault_with_domains()
+    path = rvc_cli.cmd_create_issue(
+        vault, "Wild Slug", issue_type="story", priority="P1", domain="never_declared")
+    assert os.path.exists(path)
+    assert read_frontmatter(path).get("domain_tags") == "never_declared", path
+
+
+def test_set_domain_replaces_block_list_cleanly():
+    """AC3: rewriting a multi-line tag field must not orphan the old items."""
+    _, vault = _make_vault_with_domains()
+    path = _write_raw(vault, "20_NEXT/STORY-303-Delta.md", """---
+id: STORY-303
+title: Delta
+type: story
+priority: P1
+domain_tags:
+  - corpus
+  - infra
+---
+""")
+    new_path = rvc_cli.cmd_set_issue(vault, "STORY-303", domain="review_queue")
+    assert not os.path.exists(path), "the slug stamp renamed the file"
+    fm = open(new_path).read().split("---")[1]
+    assert "domain_tags: review_queue" in fm, fm
+    assert "- corpus" not in fm and "- infra" not in fm, fm
+
+
+def test_set_multiple_domains_writes_list_and_stamps_primary():
+    """AC1+AC3: `--domain "a, b"` keeps both slugs; the filename carries the first."""
+    _, vault = _make_vault_with_domains()
+    path = rvc_cli.cmd_create_issue(
+        vault, "Multi", issue_type="story", priority="P1", domain="corpus, infra")
+    assert os.path.basename(path).endswith("[corpus].md"), path
+    assert read_frontmatter(path).get("domain_tags") == "[corpus, infra]", path
+    assert rvc_cli.frontmatter_domain_tags(open(path).read()) == ["corpus", "infra"]
+
+
+def test_set_priority_alone_never_renames():
+    """AC3: only the domain slug is mutable in the name — a hand-named file survives."""
+    _, vault = _make_vault_with_domains()
+    path = _write_raw(vault, "20_NEXT/STORY-304-Hand Named File.md", """---
+id: STORY-304
+title: A title that does not match the file name
+type: story
+priority: P1
+---
+""")
+    assert rvc_cli.cmd_set_issue(vault, "STORY-304", priority="P0") == path
+    assert os.path.exists(path)
+
+
+def test_doctor_multi_tag_slug_is_not_drift():
+    """AC5: the name carries the primary slug — agreement is membership, not string equality."""
+    _, vault = _make_vault_with_domains()
+    _write_raw(vault, "20_NEXT/STORY-305-Probe[corpus].md", """---
+id: STORY-305
+title: Probe
+type: story
+priority: P1
+domain_tags: [corpus, infra]
+---
+""")
+    report = rvc_cli.cmd_doctor(vault)
+    drift = [w for w in report["warnings"] if "mismatch" in w.lower()]
+    assert not drift, report["warnings"]
+
+
+def test_doctor_aggregates_files_without_a_slug():
+    """AC5: pre-migration state is one line for the tree, not one warning per file."""
+    _, vault = _make_vault_with_domains()
+    for n in range(4):
+        _write_raw(vault, "20_NEXT/STORY-31%d-Probe.md" % n, """---
+id: STORY-31%d
+title: Probe
+type: story
+priority: P1
+domain_tags: corpus
+---
+""" % n)
+    report = rvc_cli.cmd_doctor(vault)
+    slug_lines = [w for w in report["warnings"] if "no slug in filename" in w.lower()]
+    assert len(slug_lines) == 1, report["warnings"]
+    assert "4 files" in slug_lines[0], slug_lines[0]

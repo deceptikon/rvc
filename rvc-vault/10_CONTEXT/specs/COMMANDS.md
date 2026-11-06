@@ -60,7 +60,8 @@ installation and exits without changes.
 ```
 rvc create ⟨title⟩ [--prefix ⟨PREFIX⟩] [--type story|bug|task|epic]
              [--priority P0|P1|P2|P3|Low|Medium|High|Critical]
-             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩] [--no-skip-ci]
+             [--body ⟨text⟩] [--dir ⟨bucket⟩] [--epic ⟨EPIC-XX⟩]
+             [--domain ⟨slug⟩[,⟨slug⟩]] [--no-skip-ci]
 ```
 Create a new issue. Mints the next ID (`⟨PREFIX⟩-NN`, default `STORY`), writes
 frontmatter (`id`, `title`, `type`, `priority`, `started`), and lands in the
@@ -69,6 +70,9 @@ declares a `block` bucket, legacy priorities translate to P0-P3 and a `status:`
 field is refused (folder owns state). Commits with `[skip ci]` unless
 `--no-skip-ci` (alias `--ci`) is passed to run CI. `--skip-ci` is a deprecated,
 warning alias of `--no-skip-ci` — the old name inverted its own meaning.
+`--domain` writes `domain_tags:` and stamps the first slug at the end of the
+file name (`STORY-042-Title[corpus].md`) so the domain is visible in `ls`, a tab
+title and a grep hit — the places frontmatter never reaches.
 
 ### `rvc issue`
 
@@ -91,6 +95,20 @@ rvc issue ⟨ID⟩ ⟨action⟩ [--no-skip-ci]
 rvc get ⟨ID⟩
 ```
 Print the raw issue file for `⟨ID⟩`.
+
+### `rvc set`
+
+```
+rvc set ⟨ID⟩ [--domain ⟨slug⟩[,⟨slug⟩]] [--epic ⟨EPIC-XX⟩] [--priority P0|P1|P2|P3|…] [--no-skip-ci]
+```
+Edit the mutable fields of an existing issue. `--domain` rewrites `domain_tags:`
+and renames the file's trailing slug (`[corpus]` → `[infra]`) with `git mv`,
+healing every `[[filename]]` wikilink that pointed at the old stem — the domain
+is the one part of the name that is allowed to change. Passing empty clears both
+the field and the slug. Only the slug moves: an unrelated `--priority` or
+`--epic` edit never renames, and the title in the name is never rebuilt from
+frontmatter. Changing priority/epic is a plain field rewrite plus a `[skip ci]`
+commit.
 
 ### `rvc context`
 
@@ -145,6 +163,15 @@ recent vault commits to show (default 5; `--no-log` disables).
 `--write` also persists the text rendering to the tree's `PLATE.md`
 (`10_CONTEXT/PLATE.md` on a newvault tree) — the constitution calls the plate a
 rendering, not a record, so it must be rebuildable from the tree alone.
+The `DOMAINS` block is a histogram, not a listing: one line per slug with the
+number of surfaces carrying it (`protocol×7  rvc×4`), the ×1 tail folded, and the
+untagged surfaces named by id (`untagged (1): BUG-14`) — a count alone cannot be
+acted on. `rvc set ⟨ID⟩ --domain ⟨slug⟩` is printed next to both findings.
+When `.rvc-root` declares `domain.<slug>=` lines, the block ends with an
+`undeclared:` row naming every slug off that list (BUG-14 ask 3, relocated: the
+check runs at render time, never at create); with none declared it says so, so an
+unchecked tag set is never read as a clean one. `--format json` keeps the full
+detail per slug, the vocabulary and the untagged ids.
 
 ### `rvc doctor`
 
@@ -156,6 +183,10 @@ bucket: `status:` fields in live buckets are violations, off-vocabulary
 `priority:` is a warning. `--fix` strips `status:` and folds priorities
 (`High`→`P1`, `P0.0.0`→`P0`) in place. Archives are never touched; legacy trees
 (no `block` bucket) are exempt.
+Domain drift is a warning: a file named `[corpus]` whose `domain_tags:` no longer
+contains `corpus` is one fact in two places disagreeing. A file whose domain lives
+only in frontmatter is not drift — it is the pre-migration state of the tree, so
+those are counted in one line instead of one warning per file.
 
 ### `rvc rescan`
 

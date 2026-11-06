@@ -120,3 +120,28 @@
   deleting any "mystery" new vault file: `git log --oneline --all -- <path>` first.
   Duplicates of executed letters get a resolution addendum and `supersede`, never
   a re-triage or a `rm`.
+
+## 2026-11-06 — BUG-14 realization review (domains)
+
+- **A `domain_tags:` value is a *set*, not a key.** It appears as a bare slug (`rvc`), a quoted flow list
+  (`["rvc", "protocol"]`), a bare flow list (`[ask, owed, plate]`) and a block list (`domain_tags:` +
+  indented `- item`). `plate_frontmatter` is a scalar reader, so the block form read back as *empty* —
+  the older half of this vault was invisible to plate, doctor and context until `frontmatter_domain_tags`
+  landed. Any new reader must call it, never `fields.get("domain_tags")`.
+- **Grouping on the raw field text produces a fake histogram.** `["rvc","protocol","story"]` and
+  `[rvc, protocol, story]` are two "domains" that are really one set; a multi-tag issue then becomes its own
+  group and the plate prints one line per issue. Counts must come after the split.
+- **A file name ending in a bracket group *is* the domain slug to rvc.** `_parse_domain_from_filename`
+  and `_apply_domain_slug` anchor on the **last** `[...]` (ADLAI's field report: a title already carrying
+  `[cli]` mid-name is fine; start-anchored id resolution never notices). But a title that *ends* with
+  `[something]` will be eaten by `rvc set --domain`. Keep brackets out of the tail of a title.
+- **`_rewrite_frontmatter_field` replaces a field *and its continuation lines*.** Replacing a block list
+  with a scalar without dropping the `- item` lines leaves invalid YAML that every reader then
+  mis-parses. Same class of trap as "one fact, two places": here it is one field, two shapes.
+- **The domain vocabulary is `.rvc-root` config, and in this project that file is at the REPO ROOT, not in
+  `rvc-vault/`.** `marker_file()` walks up, so `domain.<slug>=<what it covers>` lines belong next to the
+  `tree.*`/`mint.*` block; a `domain.` line written into a second marker inside the vault is read only if that
+  inner marker is the effective one (`rvc-vault/.rvc-root` does not exist here). The check is in `rvc plate`
+  only — `create`/`set` accept any slug, deliberately. Two consequences worth knowing: adding a slug to the
+  marker retroactively legitimizes every file that already used it, and deleting one does not break any file,
+  it just starts naming them. Neither direction is a migration, so reconcile by hand when it matters.

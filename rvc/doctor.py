@@ -6,7 +6,7 @@ import re
 
 from rvc.core import (
     resolve_tree, tree_dirs, hot_dirs, LEGACY_PRIORITY_TO_P,
-    _parse_domain_from_filename
+    _parse_domain_from_filename, frontmatter_domain_tags,
 )
 from rvc.plate import plate_frontmatter
 
@@ -86,6 +86,7 @@ def cmd_doctor(vault_path, fix=False):
     tree = resolve_tree(vault_path)
     newvault = "block" in tree
     report = {"newvault": newvault, "violations": [], "warnings": [], "fixed": []}
+    unslugged = []  # files whose domain lives only in frontmatter — one line, not N
     for bucket in hot_dirs(tree):
         root = os.path.join(vault_path, bucket)
         if not os.path.isdir(root):
@@ -105,18 +106,21 @@ def cmd_doctor(vault_path, fix=False):
                 priority = fields.get("priority")
                 priority_off = newvault and priority is not None and priority not in P_VOCABULARY
 
-                # Domain checks: filename slug vs frontmatter (existence, not vocabulary)
+                # Domain checks: the filename slug and the frontmatter field are
+                # one fact in two places, so drift is a per-file warning. A file
+                # that simply has no slug yet is the pre-migration state of the
+                # whole tree (19 of them here) — counted, named once, not spammed.
                 file_domain = _parse_domain_from_filename(fn)
-                fm_domain = fields.get("domain_tags", "")
-                if file_domain and fm_domain and file_domain != fm_domain:
+                fm_tags = frontmatter_domain_tags(text)
+                if file_domain and fm_tags and file_domain not in fm_tags:
                     report["warnings"].append(
-                        f"{rel}: domain mismatch — filename '{file_domain}' != frontmatter '{fm_domain}'")
-                elif file_domain and not fm_domain:
+                        f"{rel}: domain mismatch — filename '{file_domain}' not in "
+                        f"frontmatter [{', '.join(fm_tags)}]")
+                elif file_domain and not fm_tags:
                     report["warnings"].append(
                         f"{rel}: filename has domain '{file_domain}' but no domain_tags in frontmatter")
-                elif fm_domain and not file_domain:
-                    report["warnings"].append(
-                        f"{rel}: frontmatter has domain '{fm_domain}' but no slug in filename")
+                elif fm_tags and not file_domain:
+                    unslugged.append(rel)
 
                 if not newvault:
                     continue  # legacy trees keep their filing conventions
@@ -141,5 +145,14 @@ def cmd_doctor(vault_path, fix=False):
                         hint = f" -> {fold}" if fold else " (no fold known)"
                         report["warnings"].append(
                             f"{rel}: priority {priority!r} off-vocabulary, expected P0-P3{hint}")
+
+    if unslugged:
+        noun = "file" if len(unslugged) == 1 else f"{len(unslugged)} files"
+        verb = "has" if len(unslugged) == 1 else "have"
+        shown = ", ".join(unslugged[:3])
+        rest = f" … (+{len(unslugged) - 3} more)" if len(unslugged) > 3 else ""
+        report["warnings"].append(
+            f"{noun} {verb} domain_tags but no slug in filename: {shown}{rest}"
+            " — rvc set ⟨ID⟩ --domain ⟨slug⟩ stamps the primary one")
     return report
 
