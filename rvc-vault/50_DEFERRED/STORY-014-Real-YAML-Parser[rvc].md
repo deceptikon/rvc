@@ -8,7 +8,7 @@ created: 2026-06-28
 tags: [issue, rvc, workflow]
 title: Real-YAML-Parser
 domain: workflow_meta
-domain_tags: ["rvc", "protocol", "story"]
+domain_tags: [rvc, protocol]
 aliases:
   - STORY-014
 deferred: 2026-09-29
