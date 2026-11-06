@@ -4,7 +4,7 @@ type: story
 priority: P2
 created: 2026-09-16
 domain: workflow_meta
-domain_tags: ["protocol", "cross-vault", "feedback", "triage"]
+domain_tags: [cross-vault, feedback, governance]
 deferred: 2026-09-29
 ---
 
