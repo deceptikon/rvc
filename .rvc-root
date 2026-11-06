@@ -12,7 +12,7 @@ tree.triage=20_NEXT
 
 mint.STORY=43
 
-mint.BUG=10
+mint.BUG=15
 
 
 # Domain rulings (human, survive every refresh). A census can drop a type used as a

@@ -28,6 +28,11 @@ def sync_before(vault_path):
         print("[RVC] Local changes present — skipping `git pull --rebase` "
               "(nothing is clobbered).")
         return
+    # Check if the current branch has an upstream configured (BUG-15).
+    # An untracked branch will fail git pull with multiline git help noise.
+    upstream_res = _git(git_root, "rev-parse", "--abbrev-ref", "@{u}")
+    if upstream_res.returncode != 0:
+        return
     print("[RVC] Synchronizing state (git pull --rebase)...")
     rc, out, err = run_cmd("git pull --rebase", cwd=git_root)
     if rc != 0:
@@ -90,7 +95,15 @@ def sync_after(vault_path, file_paths, msg, skip_ci=True):
                 res = _git(git_root, "rm", "--cached", "--", rel, env=base_env)
             if res.returncode != 0:
                 print(f"[RVC] Warning: could not stage {rel}:\n{res.stderr.strip()}")
-        if skip_ci and "[skip ci]" not in msg:
+        should_skip_ci = skip_ci
+        if should_skip_ci:
+            branch_res = _git(git_root, "rev-parse", "--abbrev-ref", "HEAD")
+            branch = branch_res.stdout.strip()
+            # On MR / feature branches (anything other than main/master/HEAD),
+            # do not stamp [skip ci] so CI pipelines run for MR validation (BUG-15).
+            if branch and branch not in ("main", "master", "HEAD"):
+                should_skip_ci = False
+        if should_skip_ci and "[skip ci]" not in msg:
             msg = f"{msg} [skip ci]"
         res = _git(git_root, "commit", "-m", msg, env=base_env)
         if res.returncode != 0:

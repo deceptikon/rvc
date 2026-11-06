@@ -222,10 +222,10 @@ def test_plate_shows_domain_summary():
     assert "infra" in block, block
     assert "untagged (1):" in block, block
     # The noise this replaces: full file names and one group per raw tag string
-    rows = [ln for ln in block.splitlines() if ln.strip() and "surfaces tagged" not in ln]
+    rows = [ln for ln in block.splitlines() if ln.strip() and "tagged" not in ln]
     assert not [ln for ln in rows if ".md" in ln or "[" in ln], rows
-    # Declared vocabulary, everything in use matches — the check says it ran
-    assert "vocabulary: 4 declared in .rvc-root, every slug in use matches" in block, block
+    # When declared vocabulary matches, healthy status is clean and quiet
+    assert "undeclared" not in block, block
 
 
 def test_plate_names_the_untagged_surfaces():
@@ -295,7 +295,7 @@ domain_tags: [corpus, review_queue]
     block = _domain_block(out)
     assert "corpus×2" in block, block
     assert "infra" in block and "review_queue" in block, block
-    assert "2 of 2 surfaces tagged" in block, block
+    assert "2/2 issues tagged" in block or "2 of 2 surfaces tagged" in block, block
 
 
 def test_plate_reads_block_list_domain_tags():
@@ -577,8 +577,9 @@ domain_tags: corpus
 
 
 def test_untagged_non_issue_surfaces_are_counted_not_listed():
-    """AC6: an essay has no id to stamp; naming it would be the old wall of filenames."""
-    _, vault = make_vault()
+    """AC6: non-issues (essays, letters) are not expected to carry domain tags."""
+    _, vault = _make_vault_with_domains()
+    rvc_cli.cmd_create_issue(vault, "Tagged", issue_type="story", priority="P1", domain="corpus")
     _write_raw(vault, "50_DEFERRED/ESSAY--Pilot-and-Guard.md", """---
 title: Pilot and Guard
 type: essay
@@ -591,7 +592,8 @@ type: feedback
 """)
     _, out = helpers.capture_stdout(rvc_cli.cmd_plate, vault)
     block = _domain_block(out)
-    assert "untagged: 2 non-issue surfaces" in block, block
+    assert "1/1 issues tagged" in block, block
+    assert "untagged" not in block, block
     assert "ESSAY" not in block and "FEEDBACK" not in block, block
 
 

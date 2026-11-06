@@ -250,6 +250,24 @@ def _external_bug_items(src_vault):
     return items
 
 
+def _lane_domains_badge(rows, max_shown=4):
+    """Compact summary of domain tags present in this lane's items."""
+    slug_counts = {}
+    for r in rows:
+        for t in r.get("domain_tags", []):
+            slug_counts[t] = slug_counts.get(t, 0) + 1
+    if not slug_counts:
+        return ""
+    sorted_slugs = sorted(slug_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    all_single = all(cnt == 1 for _, cnt in sorted_slugs)
+    shown = sorted_slugs[:max_shown]
+    parts = [tag if all_single else f"{tag}({cnt})" for tag, cnt in shown]
+    extra = len(sorted_slugs) - len(shown)
+    if extra > 0:
+        parts.append(f"+{extra}")
+    return "  [" + " ".join(parts) + "]"
+
+
 def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, log_count=5, write=False):
     """Render the plate: seven lanes computed from folders, priorities and open ask boxes."""
     tree = resolve_tree(vault_path)
@@ -457,7 +475,10 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
     }
     lines = [f"PLATE — {os.path.basename(vault_path)} — {today.isoformat()} — derived from the tree"]
     for key, rows in lanes.items():
-        lines.append(f"\n{titles[key]}  [{len(rows)}]")
+        if not rows and key in ("owes_turn", "owner", "overdue"):
+            continue
+        badge = _lane_domains_badge(rows) if rows else ""
+        lines.append(f"\n{titles[key]}  [{len(rows)}]{badge}")
         if not rows:
             lines.append("  —")
             continue
@@ -475,42 +496,38 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             elif key == "overdue":
                 lines.append(f"  {row['age_days']:>3}d  {row['path']}  (last: {row['last_speaker']})")
             elif key == "inbox":
-                lines.append(f"  {row['name']}  type={row['type'] or '—'}")
+                type_name = row.get("type", "")
+                type_str = f"  type={type_name}" if type_name and type_name not in ("story", "bug", "epic", "") else ""
+                lines.append(f"  {row['name']}{type_str}")
             else:
                 lines.append(f"  {row['name']}  pri={row['priority'] or '—'}")
 
     # Domain histogram — counts only; the rows themselves live in the lanes above.
-    if surfaces and (domain_counts or untagged):
+    total_issues = [s for s in surfaces if s["is_issue"]]
+    tagged_issues = [s for s in total_issues if s["domain_tags"]]
+    untagged_issues = [
+        (PLATE_ITEM_ID_RE.match(s["name"]).group(1) if PLATE_ITEM_ID_RE.match(s["name"]) else s["name"])
+        for s in total_issues if not s["domain_tags"]
+    ]
+
+    if surfaces and (domain_counts or untagged_issues):
         slug_word = "slug" if len(domain_counts) == 1 else "slugs"
-        lines.append(f"\nDOMAINS  [{tagged} of {len(surfaces)} surfaces tagged, "
-                     f"{len(domain_counts)} {slug_word} in use — an item may carry several]")
+        ratio_str = f"{len(tagged_issues)}/{len(total_issues)} issues tagged" if total_issues else f"{tagged}/{len(surfaces)} tagged"
+        lines.append(f"\n---\nDOMAINS  [{ratio_str} · {len(domain_counts)} {slug_word}]")
         common = [f"{tag}×{len(names)}" for tag, names in domain_counts if len(names) > 1]
         singletons = [tag for tag, names in domain_counts if len(names) == 1]
-        _plate_emit(lines, common)
+        if common:
+            _plate_emit(lines, common)
         if singletons:
             shown = singletons[:PLATE_DOMAIN_SINGLETONS_SHOWN]
             rest = f" … +{len(singletons) - len(shown)} more" \
                 if len(singletons) > len(shown) else ""
-            _plate_emit(lines, shown, first="  ×1: ",
-                        width=PLATE_DOMAIN_LINE_WIDTH - 6)
-            lines[-1] += rest
-        if untagged_labels:
-            # The teeth: an untagged surface is a domain nobody will ever look at, so
-            # the count comes with names. Only *issues* are named — `rvc set ⟨ID⟩` has
-            # no handle for a parked essay, and a wall of file names is the noise this
-            # block was cut down from.
-            if untagged_issues:
-                named = sorted(untagged_issues)
-                shown = named[:PLATE_DOMAIN_UNTAGGED_SHOWN]
-                rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
-                _plate_emit(lines, shown, first=f"  untagged ({len(named)}): ",
-                            width=PLATE_DOMAIN_LINE_WIDTH)
-                extra = (f" (+{len(untagged_labels) - len(untagged_issues)} non-issue surfaces)"
-                         if len(untagged_labels) > len(untagged_issues) else "")
-                lines[-1] += rest + extra + " — rvc set ⟨ID⟩ --domain ⟨slug⟩"
-            else:
-                lines.append(f"  untagged: {untagged} non-issue surfaces "
-                             "(specs and letters may carry no domain)")
+            lines.append(f"  ×1: {', '.join(shown)}{rest}")
+        if untagged_issues:
+            named = sorted(untagged_issues)
+            shown = named[:PLATE_DOMAIN_UNTAGGED_SHOWN]
+            rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
+            lines.append(f"  untagged ({len(named)}): {', '.join(shown)}{rest} — rvc set <ID> --domain <slug>")
         if vocabulary:
             if undeclared:
                 named = []
@@ -520,26 +537,20 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                     named.append(f"{entry}→{target}" if target else entry)
                 shown = named[:PLATE_DOMAIN_UNDECLARED_SHOWN]
                 rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
-                _plate_emit(lines, shown, first="  undeclared: ",
-                            width=PLATE_DOMAIN_LINE_WIDTH)
-                lines[-1] += rest + " — off the .rvc-root list (rvc doctor rebuilds it)"
-            else:
-                extra = f", {len(ruled)} ruled away" if ruled else ""
-                lines.append(f"  vocabulary: {len(vocabulary)} declared in .rvc-root, "
-                             f"every slug in use matches{extra}")
+                lines.append(f"  undeclared: {', '.join(shown)}{rest} (run: rvc doctor)")
         else:
-            lines.append("  vocabulary: none declared — rvc doctor writes this list "
-                         "from the live buckets")
+            lines.append("  vocabulary: none declared (run: rvc doctor)")
 
     if external:
-        lines.append("\nEXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)")
+        lines.append("\n---\nEXTERNAL FEEDBACK")
         for ext in external:
             pending_txt = ", ".join(ext["pending"]) if ext["pending"] else "—"
-            lines.append(f"  {ext['name']}: pending: {pending_txt} | "
+            pending_count = len(ext["pending"])
+            lines.append(f"  {ext['name']}: pending: {pending_txt} ({pending_count}) · "
                          f"done: {ext['done']} of {ext['total']}")
 
     if recent_commits:
-        lines.append(f"\nRECENT ACTIVITY (last {len(recent_commits)} commits)")
+        lines.append(f"\n---\nRECENT ACTIVITY (last {len(recent_commits)} commits)")
         for c in recent_commits:
             lines.append(f"  {c['hash']}  {c['relative_time']:<14} ({c['author']}) {c['subject']}")
 

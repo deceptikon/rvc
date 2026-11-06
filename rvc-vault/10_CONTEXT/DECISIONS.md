@@ -3,6 +3,18 @@
 Format: `## <date> — <agent> — <title>` + 2–4 lines of rationale. Never delete the *why* of a
 live decision; compress superseded ones to one line pointing at the resolving commit/story.
 
+## 2026-11-07 — pi — compact plate rendering, per-lane domains, MR CI pipelines (STORY-043, BUG-15)
+- **Per-lane domain badges and compact DOMAINS/FEEDBACK.** Plate lane headers now carry an inline
+  domain distribution badge (`[review_queue(4) api_contracts(3) ...]`). Empty alert blocks (owed turns,
+  awaiting owner, overdue) are omitted when empty. `DOMAINS` filters untagged counting strictly to issues
+  (excluding specs/essays/letters), formats inline, suppresses healthy vocabulary status, and provides
+  direct `(run: rvc doctor)` hints. Major sections are delineated with `---` dividers. Standard issue items in
+  inbox omit redundant `type=story`/`type=bug`.
+- **Git sync and CI pipeline discipline (BUG-15).** `sync_before` checks if the current branch has an upstream
+  configured before attempting `git pull --rebase`, skipping silently on untracked local branches without
+  advice noise. `sync_after` detects non-main/feature/MR branches and omits `[skip ci]` by default so MR
+  validation pipelines run and do not block GitLab merge requests.
+
 ## 2026-09-19 — opencode — transitions read calmly, the lock never lingers (STORY-035)
 - **Transitions never spray raw git errors on untracked sources.** `sync_before` skips
   `git pull --rebase` when the tree is dirty (a rebase pull would abort with
