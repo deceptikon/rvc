@@ -121,27 +121,38 @@
   Duplicates of executed letters get a resolution addendum and `supersede`, never
   a re-triage or a `rm`.
 
-## 2026-11-06 — BUG-14 realization review (domains)
+## 2026-11-06 — reading `domain_tags` is not reading a scalar (BUG-14)
 
-- **A `domain_tags:` value is a *set*, not a key.** It appears as a bare slug (`rvc`), a quoted flow list
-  (`["rvc", "protocol"]`), a bare flow list (`[ask, owed, plate]`) and a block list (`domain_tags:` +
-  indented `- item`). `plate_frontmatter` is a scalar reader, so the block form read back as *empty* —
-  the older half of this vault was invisible to plate, doctor and context until `frontmatter_domain_tags`
-  landed. Any new reader must call it, never `fields.get("domain_tags")`.
-- **Grouping on the raw field text produces a fake histogram.** `["rvc","protocol","story"]` and
-  `[rvc, protocol, story]` are two "domains" that are really one set; a multi-tag issue then becomes its own
-  group and the plate prints one line per issue. Counts must come after the split.
-- **A file name ending in a bracket group *is* the domain slug to rvc.** `_parse_domain_from_filename`
-  and `_apply_domain_slug` anchor on the **last** `[...]` (ADLAI's field report: a title already carrying
-  `[cli]` mid-name is fine; start-anchored id resolution never notices). But a title that *ends* with
-  `[something]` will be eaten by `rvc set --domain`. Keep brackets out of the tail of a title.
-- **`_rewrite_frontmatter_field` replaces a field *and its continuation lines*.** Replacing a block list
-  with a scalar without dropping the `- item` lines leaves invalid YAML that every reader then
-  mis-parses. Same class of trap as "one fact, two places": here it is one field, two shapes.
-- **The domain vocabulary is `.rvc-root` config, and in this project that file is at the REPO ROOT, not in
-  `rvc-vault/`.** `marker_file()` walks up, so `domain.<slug>=<what it covers>` lines belong next to the
-  `tree.*`/`mint.*` block; a `domain.` line written into a second marker inside the vault is read only if that
-  inner marker is the effective one (`rvc-vault/.rvc-root` does not exist here). The check is in `rvc plate`
-  only — `create`/`set` accept any slug, deliberately. Two consequences worth knowing: adding a slug to the
-  marker retroactively legitimizes every file that already used it, and deleting one does not break any file,
-  it just starts naming them. Neither direction is a migration, so reconcile by hand when it matters.
+- **The field is a *set* in four shapes**: bare slug, `["a", "b"]`, `[a, b]`, and a block list
+  (`domain_tags:` + indented `- item`). `plate_frontmatter` is a scalar reader, so the block form read
+  back empty and half the vault was invisible. Every reader goes through `frontmatter_domain_tags`.
+- **Grouping on the raw text makes a fake histogram.** Two spellings of one set become two "domains",
+  and a multi-tag issue becomes its own group of one. Split first, then count.
+- **A bracket group at the *end* of a file name is the domain slug.** Both readers anchor on the last
+  `[...]`, so a title carrying `[cli]` mid-name is fine — but a title ending in `[something]` is eaten
+  by `rvc set --domain`. Keep brackets out of the tail of a title.
+- **Rewriting a frontmatter field must take its continuation lines with it**, or a block list replaced
+  by a scalar leaves orphaned `- item` lines and invalid YAML.
+
+## 2026-11-06 — the domain vocabulary is generated, never hand-kept (BUG-14, second pass)
+
+- **The `domain.<slug>=` block in `.rvc-root` is a rendering.** `rvc doctor` rewrites it on every run
+  (with or without `--fix`). A hand-kept list beside the tags is the same fact in two places, and it
+  rots that way — the letter's own diagnosis, briefly committed by the tool written to answer it.
+  The effective marker here is at the **repo root**, not in `rvc-vault/` (`marker_file()` walks up).
+- **Only two things are human, and both survive a refresh**: the label after `=` (a slug with nothing
+  open in it stands only because someone wrote what it owns) and `domain-alias.<old>=<kept>` rulings.
+  Deleting a label retires the slug; a ruling declares its target even with no open work.
+- **The census reads the open buckets only** (`00_INBOX 20_NEXT 30_ACTIVE 40_DECIDE 50_DEFERRED`).
+  A tag in `60_DONE` or the archives does not vote, so closing the last issue of a domain shrinks the
+  list. The vocabulary check is in `rvc plate` only — `create`/`set` accept any slug, deliberately.
+- **A rendering in the index is an echo competing with the original.** `PLATE.md` is written by
+  `rvc plate --write` from the tree it describes. Refreshing it — no real text changed — moved this
+  vault's benchmark recall@5 from 85% to 77%: a page of file names and slug counts out-ranks the
+  documents it summarizes. `_context_scan` now skips renderings (`CONTEXT_EXCLUDED_RENDERINGS`) and
+  `CONTEXT_CACHE_VERSION` went to 2 to drop caches built with them. The same rule as "folder is
+  state": what is derived is not recorded, anywhere — including the retrieval corpus.
+- **`rvc doctor` now writes the marker, under the create lock.** A refresh racing a mint would drop the
+  `mint.<PREFIX>` bump the create just made — a lost floor is a duplicate id (BUG-09). If the lock
+  times out the run says `domain vocabulary NOT refreshed`: the audit did not happen, which is not the
+  same as a clean vault.

@@ -162,16 +162,20 @@ identity-free. `--format json` emits a machine-readable payload including `recen
 recent vault commits to show (default 5; `--no-log` disables).
 `--write` also persists the text rendering to the tree's `PLATE.md`
 (`10_CONTEXT/PLATE.md` on a newvault tree) — the constitution calls the plate a
-rendering, not a record, so it must be rebuildable from the tree alone.
+rendering, not a record, so it must be rebuildable from the tree alone. Being a
+rendering, it is also *not indexed*: `rvc context` skips `PLATE.md`, because a page
+of file names and slug counts otherwise out-ranks the documents it summarizes
+(measured: benchmark recall@5 85% → 77% from a plate refresh alone).
 The `DOMAINS` block is a histogram, not a listing: one line per slug with the
 number of surfaces carrying it (`protocol×7  rvc×4`), the ×1 tail folded, and the
-untagged surfaces named by id (`untagged (1): BUG-14`) — a count alone cannot be
-acted on. `rvc set ⟨ID⟩ --domain ⟨slug⟩` is printed next to both findings.
-When `.rvc-root` declares `domain.<slug>=` lines, the block ends with an
-`undeclared:` row naming every slug off that list (BUG-14 ask 3, relocated: the
-check runs at render time, never at create); with none declared it says so, so an
-unchecked tag set is never read as a clean one. `--format json` keeps the full
-detail per slug, the vocabulary and the untagged ids.
+untagged **issues** named by id (`untagged (2): STORY-044  BUG-07`); untagged
+non-issue surfaces are counted, not listed — `rvc set` has no handle for a parked
+essay, and a wall of file names is the noise this block was cut down from.
+Against the vocabulary in `.rvc-root` the block ends with `undeclared:` — names off
+the list, new since the last `rvc doctor`, or filtered as type-as-tag — with an arrow
+when a slug has been ruled away (`citation×1→review_queue`), and a `vocabulary:` line
+either way, so an unchecked tag set is never read as a clean one.
+`--format json` keeps the full detail per slug, the vocabulary, the aliases and the ids.
 
 ### `rvc doctor`
 
@@ -187,6 +191,12 @@ Domain drift is a warning: a file named `[corpus]` whose `domain_tags:` no longe
 contains `corpus` is one fact in two places disagreeing. A file whose domain lives
 only in frontmatter is not drift — it is the pre-migration state of the tree, so
 those are counted in one line instead of one warning per file.
+**Every run rebuilds the domain vocabulary** in `.rvc-root` (see the marker table in
+`PROTOCOL.md`): the census of the open buckets, minus type-as-tag, with spelling
+variants folded onto the commonest. It prints what it wrote (`domains:`), the slugs
+that look like one domain spelled twice (`merge candidates`), and any label still
+missing. The block is rewritten under the create lock — the marker also carries the
+mint floors, and a lost floor is a duplicate id.
 
 ### `rvc rescan`
 

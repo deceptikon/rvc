@@ -9,7 +9,8 @@ import subprocess
 
 from rvc.core import (
     resolve_tree, tree_dirs, find_file_by_id, marker_file,
-    frontmatter_domain_tags, read_domain_vocabulary,
+    frontmatter_domain_tags, read_domain_vocabulary, read_domain_aliases,
+    domain_slug_key,
 )
 
 PLATE_ASK_LINE_RE = re.compile(r"^\s*-\s*\[ \]\s*(.*)$")
@@ -372,7 +373,7 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
     # on the raw frontmatter string made every multi-tag issue its own "domain"
     # and printed full file names — a dump of the tag field, not a summary.
     domain_map = {}  # slug -> [item label, ...]
-    untagged_labels = []
+    untagged_labels, untagged_issues = [], []
     tagged = 0
     for surface in surfaces:
         tags = surface["domain_tags"]
@@ -382,6 +383,8 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             tagged += 1
         else:
             untagged_labels.append(label)
+            if surface["is_issue"]:
+                untagged_issues.append(label)
         for tag in tags:
             domain_map.setdefault(tag, []).append(label)
     domain_counts = sorted(
@@ -395,6 +398,7 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
     # refused at create: an undeclared slug is a decision to make, not a mint to
     # block. No `domain.` lines means no vocabulary and the plate says so.
     vocabulary = read_domain_vocabulary(vault_path)
+    ruled = {domain_slug_key(src): tgt for src, tgt in read_domain_aliases(vault_path).items()}
     undeclared = [dict(domain=tag, count=len(names))
                   for tag, names in domain_counts if tag not in vocabulary]
 
@@ -415,8 +419,11 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
                     "declared": len(vocabulary),
                     "slugs": [{"domain": slug, "label": label}
                               for slug, label in sorted(vocabulary.items())],
+                    "aliases": [{"slug": src, "into": tgt}
+                                for src, tgt in sorted(ruled.items())],
                 },
-                "undeclared": undeclared,
+                "undeclared": [{**row, "into": ruled.get(domain_slug_key(row["domain"]))}
+                               for row in undeclared],
                 "slugs": [{"domain": tag, "count": len(names), "items": sorted(names)}
                           for tag, names in domain_counts],
             },
@@ -489,27 +496,40 @@ def cmd_plate(vault_path, as_alias=None, fmt="text", stale_days=7, today=None, l
             lines[-1] += rest
         if untagged_labels:
             # The teeth: an untagged surface is a domain nobody will ever look at, so
-            # it gets a count AND the names — a bare count cannot be acted on.
-            named = sorted(untagged_labels)
-            shown = named[:PLATE_DOMAIN_UNTAGGED_SHOWN]
-            rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
-            _plate_emit(lines, shown, first=f"  untagged ({untagged}): ",
-                        width=PLATE_DOMAIN_LINE_WIDTH)
-            lines[-1] += rest + " — rvc set ⟨ID⟩ --domain ⟨slug⟩"
+            # the count comes with names. Only *issues* are named — `rvc set ⟨ID⟩` has
+            # no handle for a parked essay, and a wall of file names is the noise this
+            # block was cut down from.
+            if untagged_issues:
+                named = sorted(untagged_issues)
+                shown = named[:PLATE_DOMAIN_UNTAGGED_SHOWN]
+                rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
+                _plate_emit(lines, shown, first=f"  untagged ({len(named)}): ",
+                            width=PLATE_DOMAIN_LINE_WIDTH)
+                extra = (f" (+{len(untagged_labels) - len(untagged_issues)} non-issue surfaces)"
+                         if len(untagged_labels) > len(untagged_issues) else "")
+                lines[-1] += rest + extra + " — rvc set ⟨ID⟩ --domain ⟨slug⟩"
+            else:
+                lines.append(f"  untagged: {untagged} non-issue surfaces "
+                             "(specs and letters may carry no domain)")
         if vocabulary:
             if undeclared:
-                named = [f"{row['domain']}×{row['count']}" for row in undeclared]
+                named = []
+                for row in undeclared:
+                    target = ruled.get(domain_slug_key(row["domain"]))
+                    entry = f"{row['domain']}×{row['count']}"
+                    named.append(f"{entry}→{target}" if target else entry)
                 shown = named[:PLATE_DOMAIN_UNDECLARED_SHOWN]
                 rest = f" … +{len(named) - len(shown)} more" if len(named) > len(shown) else ""
                 _plate_emit(lines, shown, first="  undeclared: ",
                             width=PLATE_DOMAIN_LINE_WIDTH)
-                lines[-1] += (rest + f" — .rvc-root declares {len(vocabulary)} "
-                              f"{'slug' if len(vocabulary) == 1 else 'slugs'}; promote one or re-tag")
+                lines[-1] += rest + " — off the .rvc-root list (rvc doctor rebuilds it)"
             else:
-                lines.append(f"  vocabulary: {len(vocabulary)} declared, every slug in use matches")
+                extra = f", {len(ruled)} ruled away" if ruled else ""
+                lines.append(f"  vocabulary: {len(vocabulary)} declared in .rvc-root, "
+                             f"every slug in use matches{extra}")
         else:
-            lines.append("  vocabulary: none declared — domain.⟨slug⟩=⟨what it covers⟩ in .rvc-root "
-                         "turns the check on")
+            lines.append("  vocabulary: none declared — rvc doctor writes this list "
+                         "from the live buckets")
 
     if external:
         lines.append("\nEXTERNAL FEEDBACK — derived from other vaults (IDs and counts only)")

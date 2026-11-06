@@ -13,7 +13,10 @@ from rvc.core import (resolve_tree, tree_dirs, find_file_by_id, build_vault_inde
 from rvc.plate import plate_frontmatter
 
 CONTEXT_CACHE_NAME = ".rvc-context-cache.sqlite"
-CONTEXT_CACHE_VERSION = 1
+# Bumped to 2 with the rendering exclusion: a cache built from PLATE.md chunks must not keep
+# serving them after the rule changes (a version mismatch cold-starts, which is exactly it).
+CONTEXT_CACHE_VERSION = 2
+CONTEXT_EXCLUDED_RENDERINGS = {"PLATE.md"}
 CONTEXT_DEFAULT_TOP_K = 3
 CONTEXT_DEFAULT_BUDGET = 12000
 CONTEXT_BM25_K1 = 1.5
@@ -332,12 +335,20 @@ def _context_read(vault_path, rel_path):
 
 
 def _context_scan(vault_path):
-    """{rel_path: (mtime, size)} for every .md file (hidden dirs skipped)."""
+    """{rel_path: (mtime, size)} for every .md file (hidden dirs skipped).
+
+    Renderings are not knowledge. `PLATE.md` is written by `rvc plate --write` from the tree it
+    describes — a page of file names, lane labels and slug counts. Indexing it lets that echo
+    out-rank the documents it summarizes: refreshing the plate moved this vault's benchmark
+    recall@5 from 85% to 77% with no change to any real text (measured 2026-11-06). The
+    constitution already says the plate is "a rendering, not a record" (STORY-034 AC3); the
+    index now agrees.
+    """
     found = {}
     for root, dirs, files in os.walk(vault_path):
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in files:
-            if not name.endswith(".md"):
+            if not name.endswith(".md") or name in CONTEXT_EXCLUDED_RENDERINGS:
                 continue
             path = os.path.join(root, name)
             try:

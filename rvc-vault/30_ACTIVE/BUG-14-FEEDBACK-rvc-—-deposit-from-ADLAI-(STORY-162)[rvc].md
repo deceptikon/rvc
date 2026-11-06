@@ -146,3 +146,48 @@ Closed by `rvc set BUG-14 --domain "rvc, plate, feedback"` — the letter's own 
 `[rvc]` slug, which is how the `untagged (1): BUG-14` line above disappears from the plate — and
 `rvc issue BUG-14 done`. The 19 off-list slugs and the 19 files whose domain still lives only in
 frontmatter are tagging work for whoever picks the next issue, not tooling.
+
+---
+
+## Correction, same day — the hand-kept list *was* a second source of truth (`rvc issue BUG-14 start`)
+
+The addendum above says the vocabulary lives in `.rvc-root` so that "nothing new has to be discovered",
+and closes the issue on that. Both moves were wrong. A list of domains that a human maintains **beside**
+the tags is one fact in two places — the letter's own diagnosis, reproduced by the tool written to answer
+it, within the hour. And the plate's `undeclared:` line proved it: the first run rejected six of the 20
+slugs actually in use, because the hand list had been typed from a guess about the tree rather than from
+the tree.
+
+Reopened and rebuilt. Ask 3 is now **generated**:
+
+- **`rvc doctor` censuses the open buckets on every run** — with or without `--fix`, under the create lock
+  (the marker also carries the mint floors; a refresh racing a mint would lose a floor, and a lost floor is
+  a duplicate id). It drops what cannot be a domain: a `type:` used as a tag, and a word spelled two ways
+  folded onto its commonest form. Then it rewrites the `domain.<slug>=` block. This vault's list is now
+  18 slugs, all of them in use, `story`/`epic`/`bug` kept out by the filter.
+- **`rvc plate` reads that block** and names what is off it. With a derived list, "off the list" means
+  exactly two things: new since the last doctor run, or filtered as type-as-tag — so the line stays
+  meaningful without anybody maintaining a roster.
+- **Two things are human, and neither is a copy of a fact the tree already holds.** The label after `=`:
+  a slug with nothing open in it survives a refresh *only* because someone wrote what it owns, which makes
+  claiming a domain and documenting it one act, and lets unclaimed leftovers evaporate instead of
+  accreting. And `domain-alias.<rejected>=<kept>`: deciding that `citation` *is* `review_queue` is a
+  ruling, so it is written as one line and applied — never guessed by an edit distance. ADLAI's
+  `Story-Domains.md` keeps its prose (owns / does not own / absorbs); the marker holds the machine form of
+  the same rulings, and the md needs no parser.
+- **Untagged surfaces were named, not just counted** — issues by id (`untagged (1): BUG-14`), non-issue
+  files counted only, since `rvc set` has no handle for a parked essay. Observed on ADLAI's plate read-only:
+  4 untagged surfaces there are all non-issues, and their 9 slugs in use are exactly their published
+  vocabulary.
+- **Nothing moved at create.** A typo is a reconciliation prompt on the plate, not a blocked session.
+- **The rendering is now excluded from the index.** Refreshing `PLATE.md` — no real text changed —
+  moved this vault's benchmark recall@5 from 85% to 77%: a page of file names and slug counts competes
+  with the documents it summarizes. `rvc context` skips renderings now (`CONTEXT_EXCLUDED_RENDERINGS`,
+  cache version 2), which is the same law as "folder is state": derived things are not records, not even
+  in the retrieval corpus.
+
+Not done, and it is the vault's to decide, not the tool's: the 18 slugs carry no labels; `automation`,
+`owed`, `presence`, `turn-runner` are in the list because they are in use, and each is one
+`domain-alias.<x>=<y>` line away from being a ruling; 19 live files still keep their domain in
+frontmatter only. Tests: 175 passed, 1 skipped (context recall@5 back at 85% after pruning the knowledge
+files into their own chunks — the flat-append trap in `GOTCHAS.md`, hit and measured).

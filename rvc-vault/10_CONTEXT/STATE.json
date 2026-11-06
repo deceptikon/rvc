@@ -1,11 +1,11 @@
 {
-  "active_issue": "",
-  "active_branch": null,
+  "active_issue": "BUG-14",
+  "active_branch": "domain-tags-story",
   "agent": "pi (qwen3.8-flash)",
   "started_at": "2026-09-29T00:00:00Z",
-  "last_run": "2026-11-06T13:28:54Z",
-  "last_action": "BUG-14 closed: plate DOMAINS is a per-slug histogram with the untagged named and an undeclared: line checked against .rvc-root `domain.<slug>=` (ask 3 relocated to render time); set --domain renames only the slug; doctor aggregates 19 into one line; BUG-14 itself tagged [rvc] and moved to 60_DONE",
+  "last_run": "2026-11-06T13:55:30Z",
+  "last_action": "BUG-14 reopened: the hand-kept .rvc-root vocabulary WAS a second source of truth. Ask 3 rebuilt as a rendering — rvc doctor censuses the open buckets on every run (create-locked), filters type-as-tag and spelling variants, rewrites domain.<slug>=; labels and domain-alias.<old>=<new> rulings are the only human lines. Plate names untagged issues by id and counts non-issues; ADLAI read-only via `rvc plate`",
   "next_issue": "STORY-044",
   "next_blocked_on": [],
-  "last_qa": "167 passed, 0 failed, 1 skipped"
+  "last_qa": "177 passed, 0 failed, 1 skipped (context recall@5 85%)"
 }

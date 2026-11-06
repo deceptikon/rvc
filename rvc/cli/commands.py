@@ -203,7 +203,7 @@ def cmd_help(subgroup=None):
         print("  --write      also persist the text rendering to the tree's PLATE.md")
         print()
         print("Also prints a DOMAINS histogram: per-slug counts, the untagged surfaces named,")
-        print("and — when .rvc-root declares domain.⟨slug⟩= lines — the slugs off that list.")
+        print("and the slugs off the vocabulary that `rvc doctor` writes into .rvc-root.")
     elif subgroup == "doctor":
         print("rvc doctor — audit the vault against its constitution")
         print()
@@ -212,6 +212,8 @@ def cmd_help(subgroup=None):
         print()
         print("Arguments:")
         print("  --fix        strip status: and fold priorities in place (block-bucket trees)")
+        print("               the domain vocabulary is rebuilt from the tree on every run,")
+        print("               with or without --fix — it is a rendering, not a repair")
     elif subgroup == "rescan":
         print("rvc rescan — broad vault normalization and cache rebuild")
         print()
@@ -531,6 +533,27 @@ def handle_rescan(args):
         print(f"[RVC] Context cache rebuilt: {CONTEXT_CACHE_NAME}")
 
 
+def _print_domain_audit(domains):
+    """One line on what the vocabulary refresh did, plus the merge candidates."""
+    if not domains or (not domains.get("declared") and not domains.get("dropped")):
+        return
+    total = len(domains["declared"])
+    parts = [f"{total} slug{'s' if total != 1 else ''} in .rvc-root",
+             "rebuilt now" if domains["written"] else "unchanged"]
+    if domains["standing"]:
+        parts.append(f"{len(domains['standing'])} kept by their label alone, nothing open")
+    if domains["unlabeled"]:
+        parts.append(f"{len(domains['unlabeled'])} without a label"
+                     + (f": {', '.join(domains['unlabeled'][:3])}"
+                        if len(domains["unlabeled"]) <= 3 else ""))
+    print("[doctor] domains:    " + "; ".join(parts))
+    if domains["candidates"]:
+        shown = ", ".join(f"{a}~{b}" for a, b in domains["candidates"][:4])
+        rest = f" … +{len(domains['candidates']) - 4} more" \
+            if len(domains["candidates"]) > 4 else ""
+        print(f"[doctor] merge candidates (a ruling, not a defect): {shown}{rest}")
+
+
 def handle_doctor(args):
     vault = _require_vault(args.path)
     report = cmd_doctor(vault, fix=args.fix)
@@ -540,6 +563,7 @@ def handle_doctor(args):
         print(f"[doctor] warning:   {w}")
     for fx in report["fixed"]:
         print(f"[doctor] fixed:     {fx}")
+    _print_domain_audit(report.get("domains"))
     if report["violations"]:
         print(f"[doctor] {len(report['violations'])} violation(s) found — "
               f"run `rvc doctor --fix` on a block-bucket tree")
